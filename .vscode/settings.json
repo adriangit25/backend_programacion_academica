@@ -1,0 +1,18 @@
+{
+  "workbench.iconTheme": "material-icon-theme",
+  "material-icon-theme.activeIconPack": "nest",
+  "material-icon-theme.files.associations": {
+    "*.module.ts": "nest-module",
+    "*.controller.ts": "nest-controller",
+    "*.service.ts": "nest-service",
+    "*.guard.ts": "nest-guard",
+    "*.interceptor.ts": "nest-interceptor",
+    "*.filter.ts": "nest-filter",
+    "*.pipe.ts": "nest-pipe",
+    "*.middleware.ts": "nest-middleware",
+    "*.decorator.ts": "nest-decorator",
+    "*.gateway.ts": "nest-gateway",
+    "*.entity.ts": "nest-entity",
+    "*.dto.ts": "nest-dto"
+  }
+}
