@@ -1,5 +1,11 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsNotEmpty, IsString, IsOptional, IsBoolean } from "class-validator";
+import {
+  IsNotEmpty,
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsNumber,
+} from "class-validator";
 
 export class CreateAreaConocimientoDto {
   @ApiProperty({ description: "Nombre del área", example: "Programación" })
@@ -15,6 +21,11 @@ export class CreateAreaConocimientoDto {
   @IsOptional()
   @IsString()
   arc_descripcion?: string;
+
+  @ApiProperty({ description: "ID de la escuela", example: 1 })
+  @IsNotEmpty({ message: "La escuela es obligatoria" })
+  @IsNumber()
+  esc_id: number;
 
   @ApiProperty({ description: "Estado", example: true, required: false })
   @IsOptional()

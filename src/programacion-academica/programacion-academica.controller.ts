@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   ParseIntPipe,
+  Query,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
 import { ProgramacionAcademicaService } from "./programacion-academica.service";
@@ -27,6 +28,7 @@ import { CreateDiaDto } from "./dto/create-dia.dto";
 import { CreateBloqueHorarioDto } from "./dto/create-bloque-horario.dto";
 import { CreateParaleloDto } from "./dto/create-paralelo.dto";
 import { CreateAulaDto } from "./dto/create-aula.dto";
+import { AssignCoordinadorCarreraDto } from "./dto/assign-coordinador-carrera.dto";
 
 @ApiTags("Programación Académica")
 @Controller("programacion-academica")
@@ -320,12 +322,13 @@ export class ProgramacionAcademicaController {
   @Post("carreras")
   @ApiOperation({
     summary: "Crear carrera",
-    description: "Registra una nueva carrera",
+    description:
+      "Registra una nueva carrera. Si se envía usuId, se vincula automáticamente al coordinador.",
   })
   @ApiResponse({ status: 201, description: "Carrera creada exitosamente" })
   @ApiResponse({ status: 400, description: "El código ya existe" })
-  createCarrera(@Body() dto: CreateCarreraDto) {
-    return this.service.createCarrera(dto);
+  createCarrera(@Body() dto: CreateCarreraDto, @Query("usuId") usuId?: string) {
+    return this.service.createCarrera(dto, usuId ? parseInt(usuId) : undefined);
   }
 
   @Get("carreras")
@@ -828,5 +831,113 @@ export class ProgramacionAcademicaController {
   @ApiResponse({ status: 200, description: "Aula eliminada exitosamente" })
   deleteAula(@Param("id", ParseIntPipe) id: number) {
     return this.service.deleteAula(id);
+  }
+
+  // ==================== COORDINADOR - CARRERA ====================
+
+  @Post("coordinador-carrera")
+  @ApiOperation({
+    summary: "Asignar coordinador a carrera",
+    description: "Vincula un usuario coordinador con una carrera y su escuela",
+  })
+  @ApiResponse({
+    status: 201,
+    description: "Coordinador asignado exitosamente",
+  })
+  @ApiResponse({
+    status: 400,
+    description: "El coordinador ya está asignado a esa carrera",
+  })
+  assignCoordinadorCarrera(@Body() dto: AssignCoordinadorCarreraDto) {
+    return this.service.assignCoordinadorCarrera(dto);
+  }
+
+  @Get("coordinador/:usuId/carreras")
+  @ApiOperation({
+    summary: "Carreras del coordinador",
+    description: "Obtiene las carreras asignadas a un coordinador",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "Lista de carreras del coordinador",
+  })
+  getCarrerasByCoordinador(@Param("usuId", ParseIntPipe) usuId: number) {
+    return this.service.getCarrerasByCoordinador(usuId);
+  }
+
+  @Get("coordinador/:usuId/escuela")
+  @ApiOperation({
+    summary: "Escuela del coordinador",
+    description: "Obtiene la escuela a la que pertenece el coordinador",
+  })
+  @ApiResponse({ status: 200, description: "Datos de la escuela" })
+  getEscuelaByCoordinador(@Param("usuId", ParseIntPipe) usuId: number) {
+    return this.service.getEscuelaByCoordinador(usuId);
+  }
+
+  @Get("coordinador/:usuId/docentes")
+  @ApiOperation({
+    summary: "Docentes del coordinador",
+    description:
+      "Obtiene los docentes vinculados a las carreras del coordinador por área de conocimiento",
+  })
+  @ApiResponse({ status: 200, description: "Lista de docentes" })
+  getDocentesByCoordinador(@Param("usuId", ParseIntPipe) usuId: number) {
+    return this.service.getDocentesByCoordinador(usuId);
+  }
+
+  @Get("coordinador/:usuId/materias")
+  @ApiOperation({
+    summary: "Materias del coordinador",
+    description: "Obtiene las materias de las carreras del coordinador",
+  })
+  @ApiResponse({ status: 200, description: "Lista de materias" })
+  getMateriasByCoordinador(@Param("usuId", ParseIntPipe) usuId: number) {
+    return this.service.getMateriasByCoordinador(usuId);
+  }
+
+  @Get("coordinador/:usuId/areas-conocimiento")
+  @ApiOperation({
+    summary: "Áreas del coordinador",
+    description:
+      "Obtiene las áreas de conocimiento de las carreras del coordinador",
+  })
+  @ApiResponse({ status: 200, description: "Lista de áreas" })
+  getAreasConocimientoByCoordinador(
+    @Param("usuId", ParseIntPipe) usuId: number,
+  ) {
+    return this.service.getAreasConocimientoByCoordinador(usuId);
+  }
+
+  // ==================== FILTRADOS POR ESCUELA ====================
+
+  @Get("escuelas/:escId/areas-conocimiento")
+  @ApiOperation({
+    summary: "Áreas por escuela",
+    description: "Obtiene las áreas de conocimiento de una escuela",
+  })
+  @ApiResponse({ status: 200, description: "Lista de áreas de la escuela" })
+  getAreasConocimientoByEscuela(@Param("escId", ParseIntPipe) escId: number) {
+    return this.service.getAreasConocimientoByEscuela(escId);
+  }
+
+  @Get("escuelas/:escId/aulas")
+  @ApiOperation({
+    summary: "Aulas por escuela",
+    description: "Obtiene las aulas de una escuela",
+  })
+  @ApiResponse({ status: 200, description: "Lista de aulas de la escuela" })
+  getAulasByEscuela(@Param("escId", ParseIntPipe) escId: number) {
+    return this.service.getAulasByEscuela(escId);
+  }
+
+  @Get("escuelas/:escId/docentes")
+  @ApiOperation({
+    summary: "Docentes por escuela",
+    description: "Obtiene los docentes de una escuela",
+  })
+  @ApiResponse({ status: 200, description: "Lista de docentes de la escuela" })
+  getDocentesByEscuela(@Param("escId", ParseIntPipe) escId: number) {
+    return this.service.getDocentesByEscuela(escId);
   }
 }

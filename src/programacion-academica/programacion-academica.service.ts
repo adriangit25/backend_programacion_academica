@@ -21,6 +21,7 @@ import { CreateDiaDto } from "./dto/create-dia.dto";
 import { CreateBloqueHorarioDto } from "./dto/create-bloque-horario.dto";
 import { CreateParaleloDto } from "./dto/create-paralelo.dto";
 import { CreateAulaDto } from "./dto/create-aula.dto";
+import { AssignCoordinadorCarreraDto } from "./dto/assign-coordinador-carrera.dto";
 import * as bcrypt from "bcrypt";
 
 @Injectable()
@@ -396,7 +397,7 @@ export class ProgramacionAcademicaService {
 
   // ==================== CARRERAS ====================
 
-  async createCarrera(dto: CreateCarreraDto) {
+  async createCarrera(dto: CreateCarreraDto, usuId?: number) {
     const existe = await this.db.query(
       "SELECT car_id FROM tbl_carreras WHERE car_codigo = $1",
       [dto.car_codigo],
@@ -419,7 +420,19 @@ export class ProgramacionAcademicaService {
       ],
     );
 
-    return { message: "Carrera creada exitosamente", carrera: result.rows[0] };
+    const carrera = result.rows[0];
+
+    // Si viene un usuId (coordinador), vincular automáticamente
+    if (usuId) {
+      await this.db.query(
+        `INSERT INTO tbl_coordinador_carrera (usu_id, esc_id, car_id, coc_estado)
+         VALUES ($1, $2, $3, TRUE)
+         ON CONFLICT DO NOTHING`,
+        [usuId, dto.esc_id, carrera.car_id],
+      );
+    }
+
+    return { message: "Carrera creada exitosamente", carrera };
   }
 
   async findAllCarreras() {
@@ -492,18 +505,25 @@ export class ProgramacionAcademicaService {
 
   async createAreaConocimiento(dto: CreateAreaConocimientoDto) {
     const existe = await this.db.query(
-      "SELECT arc_id FROM tbl_area_conocimiento WHERE arc_nombre = $1",
-      [dto.arc_nombre],
+      "SELECT arc_id FROM tbl_area_conocimiento WHERE arc_nombre = $1 AND esc_id = $2",
+      [dto.arc_nombre, dto.esc_id],
     );
 
     if (existe.rows.length > 0) {
-      throw new BadRequestException("El área de conocimiento ya existe");
+      throw new BadRequestException(
+        "El área de conocimiento ya existe en esta escuela",
+      );
     }
 
     const result = await this.db.query(
-      `INSERT INTO tbl_area_conocimiento (arc_nombre, arc_descripcion, arc_estado)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [dto.arc_nombre, dto.arc_descripcion ?? null, dto.arc_estado ?? true],
+      `INSERT INTO tbl_area_conocimiento (arc_nombre, arc_descripcion, esc_id, arc_estado)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [
+        dto.arc_nombre,
+        dto.arc_descripcion ?? null,
+        dto.esc_id,
+        dto.arc_estado ?? true,
+      ],
     );
 
     return {
@@ -783,8 +803,8 @@ export class ProgramacionAcademicaService {
     }
 
     const result = await this.db.query(
-      `INSERT INTO tbl_docentes (usu_id, doc_titulo_grado, doc_titulo_posgrado, doc_tipo_contrato, doc_dedicacion, doc_horas_minimas, doc_horas_maximas, doc_observaciones, doc_estado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      `INSERT INTO tbl_docentes (usu_id, doc_titulo_grado, doc_titulo_posgrado, doc_tipo_contrato, doc_dedicacion, doc_horas_minimas, doc_horas_maximas, doc_observaciones, esc_id, doc_estado)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [
         dto.usu_id,
         dto.doc_titulo_grado ?? null,
@@ -794,6 +814,7 @@ export class ProgramacionAcademicaService {
         dto.doc_horas_minimas,
         dto.doc_horas_maximas,
         dto.doc_observaciones ?? null,
+        dto.esc_id,
         dto.doc_estado ?? true,
       ],
     );
@@ -831,8 +852,8 @@ export class ProgramacionAcademicaService {
     await this.findOneDocente(id);
 
     const result = await this.db.query(
-      `UPDATE tbl_docentes SET usu_id = $1, doc_titulo_grado = $2, doc_titulo_posgrado = $3, doc_tipo_contrato = $4, doc_dedicacion = $5, doc_horas_minimas = $6, doc_horas_maximas = $7, doc_observaciones = $8, doc_estado = $9
-       WHERE doc_id = $10 RETURNING *`,
+      `UPDATE tbl_docentes SET usu_id = $1, doc_titulo_grado = $2, doc_titulo_posgrado = $3, doc_tipo_contrato = $4, doc_dedicacion = $5, doc_horas_minimas = $6, doc_horas_maximas = $7, doc_observaciones = $8, esc_id = $9, doc_estado = $10
+       WHERE doc_id = $11 RETURNING *`,
       [
         dto.usu_id,
         dto.doc_titulo_grado ?? null,
@@ -842,6 +863,7 @@ export class ProgramacionAcademicaService {
         dto.doc_horas_minimas,
         dto.doc_horas_maximas,
         dto.doc_observaciones ?? null,
+        dto.esc_id,
         dto.doc_estado ?? true,
         id,
       ],
@@ -1067,13 +1089,14 @@ export class ProgramacionAcademicaService {
     }
 
     const result = await this.db.query(
-      `INSERT INTO tbl_aulas (aul_codigo, aul_nombre, aul_capacidad, aul_tipo, aul_estado)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      `INSERT INTO tbl_aulas (aul_codigo, aul_nombre, aul_capacidad, aul_tipo, esc_id, aul_estado)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
       [
         dto.aul_codigo,
         dto.aul_nombre,
         dto.aul_capacidad,
         dto.aul_tipo ?? null,
+        dto.esc_id,
         dto.aul_estado ?? true,
       ],
     );
@@ -1105,13 +1128,14 @@ export class ProgramacionAcademicaService {
     await this.findOneAula(id);
 
     const result = await this.db.query(
-      `UPDATE tbl_aulas SET aul_codigo = $1, aul_nombre = $2, aul_capacidad = $3, aul_tipo = $4, aul_estado = $5
-       WHERE aul_id = $6 RETURNING *`,
+      `UPDATE tbl_aulas SET aul_codigo = $1, aul_nombre = $2, aul_capacidad = $3, aul_tipo = $4, esc_id = $5, aul_estado = $6
+       WHERE aul_id = $7 RETURNING *`,
       [
         dto.aul_codigo,
         dto.aul_nombre,
         dto.aul_capacidad,
         dto.aul_tipo ?? null,
+        dto.esc_id,
         dto.aul_estado ?? true,
         id,
       ],
@@ -1128,4 +1152,157 @@ export class ProgramacionAcademicaService {
     );
     return { message: "Aula eliminada exitosamente" };
   }
+
+  // ==================== COORDINADOR - CARRERA ====================
+
+  async assignCoordinadorCarrera(dto: AssignCoordinadorCarreraDto) {
+    // Si no tiene car_id, verificar que no esté ya asignado a esa escuela sin carrera
+    if (!dto.car_id) {
+      const existe = await this.db.query(
+        "SELECT coc_id FROM tbl_coordinador_carrera WHERE usu_id = $1 AND esc_id = $2 AND car_id IS NULL",
+        [dto.usu_id, dto.esc_id],
+      );
+
+      if (existe.rows.length > 0) {
+        throw new BadRequestException(
+          "El coordinador ya está asignado a esa escuela",
+        );
+      }
+    } else {
+      const existe = await this.db.query(
+        "SELECT coc_id FROM tbl_coordinador_carrera WHERE usu_id = $1 AND car_id = $2",
+        [dto.usu_id, dto.car_id],
+      );
+
+      if (existe.rows.length > 0) {
+        throw new BadRequestException(
+          "El coordinador ya está asignado a esa carrera",
+        );
+      }
+    }
+
+    const result = await this.db.query(
+      `INSERT INTO tbl_coordinador_carrera (usu_id, esc_id, car_id, coc_estado)
+       VALUES ($1, $2, $3, TRUE) RETURNING *`,
+      [dto.usu_id, dto.esc_id, dto.car_id ?? null],
+    );
+
+    return {
+      message: "Coordinador asignado exitosamente",
+      asignacion: result.rows[0],
+    };
+  }
+
+  async getCarrerasByCoordinador(usuId: number) {
+    const result = await this.db.query(
+      `SELECT cc.coc_id, c.car_id, c.car_codigo, c.car_nombre, e.esc_id, e.esc_codigo, e.esc_nombre
+       FROM tbl_coordinador_carrera cc
+       INNER JOIN tbl_carreras c ON cc.car_id = c.car_id
+       INNER JOIN tbl_escuelas e ON cc.esc_id = e.esc_id
+       WHERE cc.usu_id = $1 AND cc.coc_estado = TRUE
+       ORDER BY e.esc_nombre, c.car_nombre`,
+      [usuId],
+    );
+    return result.rows;
+  }
+
+  // ==================== DATOS FILTRADOS POR COORDINADOR ====================
+
+  // Obtener la escuela del coordinador
+  async getEscuelaByCoordinador(usuId: number) {
+    const result = await this.db.query(
+      `SELECT DISTINCT e.esc_id, e.esc_codigo, e.esc_nombre, e.esc_descripcion
+       FROM tbl_coordinador_carrera cc
+       INNER JOIN tbl_escuelas e ON cc.esc_id = e.esc_id
+       WHERE cc.usu_id = $1 AND cc.coc_estado = TRUE`,
+      [usuId],
+    );
+    return result.rows;
+  }
+
+  // Docentes de la escuela del coordinador
+  async getDocentesByCoordinador(usuId: number) {
+    const result = await this.db.query(
+      `SELECT DISTINCT d.doc_id, u.usu_nombres, u.usu_apellidos, u.usu_identificacion,
+              d.doc_dedicacion, d.doc_horas_minimas, d.doc_horas_maximas, d.doc_tipo_contrato
+       FROM tbl_coordinador_carrera cc
+       INNER JOIN tbl_carreras c ON cc.car_id = c.car_id
+       INNER JOIN tbl_plan_estudio p ON p.car_id = c.car_id
+       INNER JOIN tbl_materias m ON m.pln_id = p.pln_id
+       INNER JOIN tbl_area_conocimiento a ON m.arc_id = a.arc_id
+       INNER JOIN tbl_docente_area da ON da.arc_id = a.arc_id
+       INNER JOIN tbl_docentes d ON da.doc_id = d.doc_id
+       INNER JOIN tbl_usuarios u ON d.usu_id = u.usu_id
+       WHERE cc.usu_id = $1 AND cc.coc_estado = TRUE AND d.doc_estado = TRUE
+       ORDER BY u.usu_apellidos, u.usu_nombres`,
+      [usuId],
+    );
+    return result.rows;
+  }
+
+  // Materias de las carreras del coordinador
+  async getMateriasByCoordinador(usuId: number) {
+    const result = await this.db.query(
+      `SELECT m.mat_id, m.mat_codigo, m.mat_nombre, m.mat_nivel,
+              m.mat_horas_docencia, m.mat_horas_practicas, m.mat_horas_autonomas, m.mat_total_horas,
+              c.car_nombre, p.pln_nombre, a.arc_nombre
+       FROM tbl_coordinador_carrera cc
+       INNER JOIN tbl_carreras c ON cc.car_id = c.car_id
+       INNER JOIN tbl_plan_estudio p ON p.car_id = c.car_id
+       INNER JOIN tbl_materias m ON m.pln_id = p.pln_id
+       INNER JOIN tbl_area_conocimiento a ON m.arc_id = a.arc_id
+       WHERE cc.usu_id = $1 AND cc.coc_estado = TRUE AND m.mat_estado = TRUE
+       ORDER BY c.car_nombre, m.mat_nivel, m.mat_nombre`,
+      [usuId],
+    );
+    return result.rows;
+  }
+
+  // Áreas de conocimiento de las carreras del coordinador
+  async getAreasConocimientoByCoordinador(usuId: number) {
+    const result = await this.db.query(
+      `SELECT DISTINCT a.arc_id, a.arc_nombre, a.arc_descripcion
+       FROM tbl_coordinador_carrera cc
+       INNER JOIN tbl_carreras c ON cc.car_id = c.car_id
+       INNER JOIN tbl_plan_estudio p ON p.car_id = c.car_id
+       INNER JOIN tbl_materias m ON m.pln_id = p.pln_id
+       INNER JOIN tbl_area_conocimiento a ON m.arc_id = a.arc_id
+       WHERE cc.usu_id = $1 AND cc.coc_estado = TRUE AND a.arc_estado = TRUE
+       ORDER BY a.arc_nombre`,
+      [usuId],
+    );
+    return result.rows;
+  }
+
+  // ==================== FILTRADOS POR ESCUELA ====================
+
+  async getAreasConocimientoByEscuela(escId: number) {
+    const result = await this.db.query(
+      "SELECT * FROM tbl_area_conocimiento WHERE esc_id = $1 AND arc_estado = TRUE ORDER BY arc_nombre",
+      [escId],
+    );
+    return result.rows;
+  }
+
+  async getAulasByEscuela(escId: number) {
+    const result = await this.db.query(
+      "SELECT * FROM tbl_aulas WHERE esc_id = $1 AND aul_estado = TRUE ORDER BY aul_codigo",
+      [escId],
+    );
+    return result.rows;
+  }
+
+  async getDocentesByEscuela(escId: number) {
+    const result = await this.db.query(
+      `SELECT d.*, u.usu_nombres, u.usu_apellidos, u.usu_identificacion
+       FROM tbl_docentes d
+       INNER JOIN tbl_usuarios u ON d.usu_id = u.usu_id
+       WHERE d.esc_id = $1 AND d.doc_estado = TRUE
+       ORDER BY u.usu_apellidos, u.usu_nombres`,
+      [escId],
+    );
+    return result.rows;
+  }
+
+  
 }

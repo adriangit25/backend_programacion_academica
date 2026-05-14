@@ -35,6 +35,11 @@ export class CreateAulaDto {
   @IsString()
   aul_tipo?: string;
 
+  @ApiProperty({ description: "ID de la escuela", example: 1 })
+  @IsNotEmpty({ message: "La escuela es obligatoria" })
+  @IsNumber()
+  esc_id: number;
+
   @ApiProperty({ description: "Estado", example: true, required: false })
   @IsOptional()
   @IsBoolean()
