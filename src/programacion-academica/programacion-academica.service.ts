@@ -22,6 +22,9 @@ import { CreateBloqueHorarioDto } from "./dto/create-bloque-horario.dto";
 import { CreateParaleloDto } from "./dto/create-paralelo.dto";
 import { CreateAulaDto } from "./dto/create-aula.dto";
 import { AssignCoordinadorCarreraDto } from "./dto/assign-coordinador-carrera.dto";
+import { CreateProgramacionDto } from "./dto/create-programacion.dto";
+import { AbrirNivelDto } from "./dto/abrir-nivel.dto";
+import { AbrirMateriasDto } from "./dto/abrir-materias.dto";
 import * as bcrypt from "bcrypt";
 
 @Injectable()
@@ -1304,5 +1307,196 @@ export class ProgramacionAcademicaService {
     return result.rows;
   }
 
-  
+  // ==================== PROGRAMACIÓN ACADÉMICA ====================
+
+  // Abrir nivel completo
+  async abrirNivel(dto: AbrirNivelDto) {
+    // Obtener todas las materias del nivel en ese plan
+    const materias = await this.db.query(
+      "SELECT * FROM tbl_materias WHERE pln_id = $1 AND mat_nivel = $2 AND mat_estado = TRUE",
+      [dto.pln_id, dto.nivel],
+    );
+
+    if (materias.rows.length === 0) {
+      throw new NotFoundException("No se encontraron materias para ese nivel");
+    }
+
+    const resultados = [];
+
+    for (const materia of materias.rows) {
+      // Verificar que no esté ya abierta
+      const existe = await this.db.query(
+        "SELECT pra_id FROM tbl_programacion_academica WHERE per_id = $1 AND mat_id = $2 AND par_id = $3 AND pra_estado = TRUE",
+        [dto.per_id, materia.mat_id, dto.par_id],
+      );
+
+      if (existe.rows.length === 0) {
+        const result = await this.db.query(
+          `INSERT INTO tbl_programacion_academica (per_id, mat_id, car_id, pln_id, par_id, pra_nivel, pra_modalidad, pra_estado)
+           VALUES ($1, $2, $3, $4, $5, $6, 'Presencial', TRUE) RETURNING *`,
+          [
+            dto.per_id,
+            materia.mat_id,
+            dto.car_id,
+            dto.pln_id,
+            dto.par_id,
+            dto.nivel,
+          ],
+        );
+        resultados.push(result.rows[0]);
+      }
+    }
+
+    return {
+      message: `Nivel ${dto.nivel} abierto exitosamente con ${resultados.length} materias`,
+      programacion: resultados,
+    };
+  }
+
+  // Abrir materias individuales
+  async abrirMaterias(dto: AbrirMateriasDto) {
+    const resultados = [];
+
+    for (const matId of dto.mat_ids) {
+      // Obtener datos de la materia
+      const materia = await this.db.query(
+        "SELECT * FROM tbl_materias WHERE mat_id = $1 AND mat_estado = TRUE",
+        [matId],
+      );
+
+      if (materia.rows.length === 0) continue;
+
+      // Verificar que no esté ya abierta
+      const existe = await this.db.query(
+        "SELECT pra_id FROM tbl_programacion_academica WHERE per_id = $1 AND mat_id = $2 AND par_id = $3 AND pra_estado = TRUE",
+        [dto.per_id, matId, dto.par_id],
+      );
+
+      if (existe.rows.length === 0) {
+        const result = await this.db.query(
+          `INSERT INTO tbl_programacion_academica (per_id, mat_id, car_id, pln_id, par_id, pra_nivel, pra_modalidad, pra_estado)
+           VALUES ($1, $2, $3, $4, $5, $6, 'Presencial', TRUE) RETURNING *`,
+          [
+            dto.per_id,
+            matId,
+            dto.car_id,
+            dto.pln_id,
+            dto.par_id,
+            materia.rows[0].mat_nivel,
+          ],
+        );
+        resultados.push(result.rows[0]);
+      }
+    }
+
+    return {
+      message: `${resultados.length} materias abiertas exitosamente`,
+      programacion: resultados,
+    };
+  }
+
+  // Actualizar programación (asignar docente, NRC, estudiantes, etc.)
+  async updateProgramacion(id: number, dto: CreateProgramacionDto) {
+    const existe = await this.db.query(
+      "SELECT pra_id FROM tbl_programacion_academica WHERE pra_id = $1",
+      [id],
+    );
+
+    if (existe.rows.length === 0) {
+      throw new NotFoundException("Programación no encontrada");
+    }
+
+    const result = await this.db.query(
+      `UPDATE tbl_programacion_academica 
+       SET doc_id = $1, aul_id = $2, pra_nrc = $3, pra_modalidad = $4, 
+           pra_estudiantes_estimado = $5, pra_estudiantes_matriculados = $6, 
+           pra_laboratorio = $7, pra_observaciones = $8
+       WHERE pra_id = $9 RETURNING *`,
+      [
+        dto.doc_id ?? null,
+        dto.aul_id ?? null,
+        dto.pra_nrc ?? null,
+        dto.pra_modalidad ?? "Presencial",
+        dto.pra_estudiantes_estimado ?? 0,
+        dto.pra_estudiantes_matriculados ?? 0,
+        dto.pra_laboratorio ?? null,
+        dto.pra_observaciones ?? null,
+        id,
+      ],
+    );
+
+    return {
+      message: "Programación actualizada exitosamente",
+      programacion: result.rows[0],
+    };
+  }
+
+  // Obtener programación de un período y carrera
+  async getProgramacionByPeriodoCarrera(perId: number, carId: number) {
+    const result = await this.db.query(
+      `SELECT pa.*, m.mat_codigo, m.mat_nombre, m.mat_horas_docencia, m.mat_horas_practicas, 
+              m.mat_horas_autonomas, m.mat_total_horas,
+              p.par_nombre,
+              CONCAT(u.usu_apellidos, ' ', u.usu_nombres) AS docente_nombre,
+              a.aul_nombre,
+              pe.per_nombre,
+              pl.pln_nombre,
+              c.car_nombre
+       FROM tbl_programacion_academica pa
+       INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
+       INNER JOIN tbl_paralelos p ON pa.par_id = p.par_id
+       INNER JOIN tbl_periodos pe ON pa.per_id = pe.per_id
+       INNER JOIN tbl_plan_estudio pl ON pa.pln_id = pl.pln_id
+       INNER JOIN tbl_carreras c ON pa.car_id = c.car_id
+       LEFT JOIN tbl_docentes d ON pa.doc_id = d.doc_id
+       LEFT JOIN tbl_usuarios u ON d.usu_id = u.usu_id
+       LEFT JOIN tbl_aulas a ON pa.aul_id = a.aul_id
+       WHERE pa.per_id = $1 AND pa.car_id = $2 AND pa.pra_estado = TRUE
+       ORDER BY pa.pra_nivel, m.mat_nombre`,
+      [perId, carId],
+    );
+
+    return result.rows;
+  }
+
+  // Obtener programación por período, carrera y nivel
+  async getProgramacionByNivel(perId: number, carId: number, nivel: number) {
+    const result = await this.db.query(
+      `SELECT pa.*, m.mat_codigo, m.mat_nombre, m.mat_horas_docencia, m.mat_horas_practicas, 
+              m.mat_horas_autonomas, m.mat_total_horas,
+              p.par_nombre,
+              CONCAT(u.usu_apellidos, ' ', u.usu_nombres) AS docente_nombre,
+              a.aul_nombre
+       FROM tbl_programacion_academica pa
+       INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
+       INNER JOIN tbl_paralelos p ON pa.par_id = p.par_id
+       LEFT JOIN tbl_docentes d ON pa.doc_id = d.doc_id
+       LEFT JOIN tbl_usuarios u ON d.usu_id = u.usu_id
+       LEFT JOIN tbl_aulas a ON pa.aul_id = a.aul_id
+       WHERE pa.per_id = $1 AND pa.car_id = $2 AND pa.pra_nivel = $3 AND pa.pra_estado = TRUE
+       ORDER BY m.mat_nombre`,
+      [perId, carId, nivel],
+    );
+
+    return result.rows;
+  }
+
+  // Eliminar programación
+  async deleteProgramacion(id: number) {
+    const existe = await this.db.query(
+      "SELECT pra_id FROM tbl_programacion_academica WHERE pra_id = $1",
+      [id],
+    );
+
+    if (existe.rows.length === 0) {
+      throw new NotFoundException("Programación no encontrada");
+    }
+
+    await this.db.query(
+      "UPDATE tbl_programacion_academica SET pra_estado = FALSE WHERE pra_id = $1",
+      [id],
+    );
+
+    return { message: "Programación eliminada exitosamente" };
+  }
 }

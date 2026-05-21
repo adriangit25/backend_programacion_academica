@@ -29,6 +29,9 @@ import { CreateBloqueHorarioDto } from "./dto/create-bloque-horario.dto";
 import { CreateParaleloDto } from "./dto/create-paralelo.dto";
 import { CreateAulaDto } from "./dto/create-aula.dto";
 import { AssignCoordinadorCarreraDto } from "./dto/assign-coordinador-carrera.dto";
+import { CreateProgramacionDto } from "./dto/create-programacion.dto";
+import { AbrirNivelDto } from "./dto/abrir-nivel.dto";
+import { AbrirMateriasDto } from "./dto/abrir-materias.dto";
 
 @ApiTags("Programación Académica")
 @Controller("programacion-academica")
@@ -939,5 +942,94 @@ export class ProgramacionAcademicaController {
   @ApiResponse({ status: 200, description: "Lista de docentes de la escuela" })
   getDocentesByEscuela(@Param("escId", ParseIntPipe) escId: number) {
     return this.service.getDocentesByEscuela(escId);
+  }
+
+  // ==================== PROGRAMACIÓN ACADÉMICA ====================
+
+  @Post("programacion/abrir-nivel")
+  @ApiOperation({
+    summary: "Abrir nivel completo",
+    description:
+      "Abre todas las materias de un nivel para un período y paralelo",
+  })
+  @ApiResponse({ status: 201, description: "Nivel abierto exitosamente" })
+  @ApiResponse({
+    status: 404,
+    description: "No se encontraron materias para ese nivel",
+  })
+  abrirNivel(@Body() dto: AbrirNivelDto) {
+    return this.service.abrirNivel(dto);
+  }
+
+  @Post("programacion/abrir-materias")
+  @ApiOperation({
+    summary: "Abrir materias individuales",
+    description: "Abre materias específicas para un período y paralelo",
+  })
+  @ApiResponse({ status: 201, description: "Materias abiertas exitosamente" })
+  abrirMaterias(@Body() dto: AbrirMateriasDto) {
+    return this.service.abrirMaterias(dto);
+  }
+
+  @Put("programacion/:id")
+  @ApiOperation({
+    summary: "Actualizar programación",
+    description:
+      "Asigna docente, NRC, estudiantes, laboratorio a una materia abierta",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "Programación actualizada exitosamente",
+  })
+  @ApiResponse({ status: 404, description: "Programación no encontrada" })
+  updateProgramacion(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: CreateProgramacionDto,
+  ) {
+    return this.service.updateProgramacion(id, dto);
+  }
+
+  @Get("programacion/periodo/:perId/carrera/:carId")
+  @ApiOperation({
+    summary: "Programación por período y carrera",
+    description: "Obtiene toda la programación de una carrera en un período",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "Lista de la programación académica",
+  })
+  getProgramacionByPeriodoCarrera(
+    @Param("perId", ParseIntPipe) perId: number,
+    @Param("carId", ParseIntPipe) carId: number,
+  ) {
+    return this.service.getProgramacionByPeriodoCarrera(perId, carId);
+  }
+
+  @Get("programacion/periodo/:perId/carrera/:carId/nivel/:nivel")
+  @ApiOperation({
+    summary: "Programación por nivel",
+    description: "Obtiene la programación de un nivel específico",
+  })
+  @ApiResponse({ status: 200, description: "Lista de materias del nivel" })
+  getProgramacionByNivel(
+    @Param("perId", ParseIntPipe) perId: number,
+    @Param("carId", ParseIntPipe) carId: number,
+    @Param("nivel", ParseIntPipe) nivel: number,
+  ) {
+    return this.service.getProgramacionByNivel(perId, carId, nivel);
+  }
+
+  @Delete("programacion/:id")
+  @ApiOperation({
+    summary: "Eliminar programación",
+    description: "Desactiva una materia de la programación",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "Programación eliminada exitosamente",
+  })
+  @ApiResponse({ status: 404, description: "Programación no encontrada" })
+  deleteProgramacion(@Param("id", ParseIntPipe) id: number) {
+    return this.service.deleteProgramacion(id);
   }
 }
