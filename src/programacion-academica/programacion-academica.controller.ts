@@ -32,6 +32,7 @@ import { AssignCoordinadorCarreraDto } from "./dto/assign-coordinador-carrera.dt
 import { CreateProgramacionDto } from "./dto/create-programacion.dto";
 import { AbrirNivelDto } from "./dto/abrir-nivel.dto";
 import { AbrirMateriasDto } from "./dto/abrir-materias.dto";
+import { CreateHorarioDto } from "./dto/create-horario.dto";
 
 @ApiTags("Programación Académica")
 @Controller("programacion-academica")
@@ -1031,5 +1032,80 @@ export class ProgramacionAcademicaController {
   @ApiResponse({ status: 404, description: "Programación no encontrada" })
   deleteProgramacion(@Param("id", ParseIntPipe) id: number) {
     return this.service.deleteProgramacion(id);
+  }
+
+  // ==================== HORARIOS ====================
+
+  @Post("horarios")
+  @ApiOperation({
+    summary: "Asignar horario",
+    description:
+      "Asigna un día y bloque horario a una materia. Valida conflictos de docente y aula.",
+  })
+  @ApiResponse({ status: 201, description: "Horario asignado exitosamente" })
+  @ApiResponse({ status: 400, description: "Conflicto de horario detectado" })
+  createHorario(@Body() dto: CreateHorarioDto) {
+    return this.service.createHorario(dto);
+  }
+
+  @Get("horarios/programacion/:praId")
+  @ApiOperation({
+    summary: "Horarios de una materia",
+    description:
+      "Obtiene los bloques horarios asignados a una materia de la programación",
+  })
+  @ApiResponse({ status: 200, description: "Lista de horarios" })
+  getHorariosByProgramacion(@Param("praId", ParseIntPipe) praId: number) {
+    return this.service.getHorariosByProgramacion(praId);
+  }
+
+  @Get("horarios/periodo/:perId/carrera/:carId")
+  @ApiOperation({
+    summary: "Horario completo",
+    description:
+      "Obtiene el horario completo de una carrera en un período (vista grilla)",
+  })
+  @ApiResponse({ status: 200, description: "Horario completo" })
+  getHorarioCompleto(
+    @Param("perId", ParseIntPipe) perId: number,
+    @Param("carId", ParseIntPipe) carId: number,
+  ) {
+    return this.service.getHorarioCompleto(perId, carId);
+  }
+
+  @Get("horarios/docente/:docId/periodo/:perId")
+  @ApiOperation({
+    summary: "Horario de un docente",
+    description: "Obtiene el horario de un docente en un período específico",
+  })
+  @ApiResponse({ status: 200, description: "Horario del docente" })
+  getHorarioDocente(
+    @Param("docId", ParseIntPipe) docId: number,
+    @Param("perId", ParseIntPipe) perId: number,
+  ) {
+    return this.service.getHorarioDocente(docId, perId);
+  }
+
+  @Put("horarios/:id")
+  @ApiOperation({
+    summary: "Actualizar horario",
+    description: "Modifica un horario existente validando conflictos",
+  })
+  @ApiResponse({ status: 200, description: "Horario actualizado exitosamente" })
+  updateHorario(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: CreateHorarioDto,
+  ) {
+    return this.service.updateHorario(id, dto);
+  }
+
+  @Delete("horarios/:id")
+  @ApiOperation({
+    summary: "Eliminar horario",
+    description: "Elimina un bloque horario asignado",
+  })
+  @ApiResponse({ status: 200, description: "Horario eliminado exitosamente" })
+  deleteHorario(@Param("id", ParseIntPipe) id: number) {
+    return this.service.deleteHorario(id);
   }
 }
