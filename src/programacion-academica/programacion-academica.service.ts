@@ -1522,118 +1522,162 @@ export class ProgramacionAcademicaService {
     const prog = programacion.rows[0];
     const semanas = prog.per_semanas || 16;
 
-    // Calcular horas por semana (docencia + práctica sumadas y divididas entre semanas)
-    const horasTotalesSemestre =prog.mat_horas_docencia + prog.mat_horas_practicas;
-    const totalBloquesSemana = Math.ceil(horasTotalesSemestre / semanas);
-    const horasDocenciaSemana = Math.ceil(prog.mat_horas_docencia / semanas);
-    const horasPracticaSemana = Math.ceil(prog.mat_horas_practicas / semanas);
+    // Obtener orden de bloques inicio y fin
+    const bloqueInicio = await this.db.query(
+      "SELECT blq_id, blq_orden, blq_hora_inicio FROM tbl_bloques_horarios WHERE blq_id = $1",
+      [dto.blq_id_inicio],
+    );
+    const bloqueFin = await this.db.query(
+      "SELECT blq_id, blq_orden, blq_hora_fin FROM tbl_bloques_horarios WHERE blq_id = $1",
+      [dto.blq_id_fin],
+    );
 
-    // Contar bloques ya asignados esta semana
-    const bloquesAsignados = await this.db.query(
-      "SELECT COUNT(*) as total FROM tbl_horarios WHERE pra_id = $1 AND hor_estado = TRUE",
+    if (bloqueInicio.rows.length === 0 || bloqueFin.rows.length === 0) {
+      throw new NotFoundException("Bloque horario no encontrado");
+    }
+
+    const ordenInicio = bloqueInicio.rows[0].blq_orden;
+    const ordenFin = bloqueFin.rows[0].blq_orden;
+    const duracion = ordenFin - ordenInicio + 1;
+
+    if (duracion <= 0) {
+      throw new BadRequestException(
+        "La hora de fin debe ser mayor a la hora de inicio",
+      );
+    }
+
+    // Calcular horas semanales permitidas
+    const horasTotalesSemestre =
+      prog.mat_horas_docencia + prog.mat_horas_practicas;
+    const totalHorasSemana = Math.ceil(horasTotalesSemestre / semanas);
+
+    // Contar horas ya asignadas
+    const horasAsignadas = await this.db.query(
+      "SELECT COALESCE(SUM(hor_duracion), 0) as total FROM tbl_horarios WHERE pra_id = $1 AND hor_estado = TRUE",
       [dto.pra_id],
     );
 
-    const bloquesActuales = parseInt(bloquesAsignados.rows[0].total);
+    const horasActuales = parseInt(horasAsignadas.rows[0].total);
+    const horasNuevas = horasActuales + duracion;
 
-    if (bloquesActuales >= totalBloquesSemana) {
+    if (horasNuevas > totalHorasSemana) {
+      const horasDisponibles = totalHorasSemana - horasActuales;
       throw new BadRequestException(
-        `"${prog.mat_nombre}" ya tiene sus ${totalBloquesSemana} bloques semanales completos (D: ${horasDocenciaSemana} + P: ${horasPracticaSemana}). No se pueden agregar más.`,
+        `"${prog.mat_nombre}" tiene ${totalHorasSemana} horas semanales. Ya asignadas: ${horasActuales}. Disponibles: ${horasDisponibles}. No se pueden agregar ${duracion} horas más.`,
       );
     }
 
-    // Validar que no haya conflicto de docente (mismo día y bloque)
-    const conflictoDocente = await this.db.query(
-      `SELECT h.hor_id, m.mat_nombre, CONCAT(u.usu_apellidos, ' ', u.usu_nombres) AS docente
-       FROM tbl_horarios h
-       INNER JOIN tbl_programacion_academica pa ON h.pra_id = pa.pra_id
-       INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
-       INNER JOIN tbl_docentes d ON pa.doc_id = d.doc_id
-       INNER JOIN tbl_usuarios u ON d.usu_id = u.usu_id
-       WHERE h.dia_id = $1 AND h.blq_id = $2 AND h.hor_estado = TRUE
-       AND pa.doc_id = (SELECT doc_id FROM tbl_programacion_academica WHERE pra_id = $3)
-       AND pa.doc_id IS NOT NULL`,
-      [dto.dia_id, dto.blq_id, dto.pra_id],
+    // Obtener todos los bloques que se van a ocupar
+    const bloquesOcupados = await this.db.query(
+      "SELECT blq_id, blq_orden, blq_hora_inicio, blq_hora_fin FROM tbl_bloques_horarios WHERE blq_orden >= $1 AND blq_orden <= $2 ORDER BY blq_orden",
+      [ordenInicio, ordenFin],
     );
 
-    if (conflictoDocente.rows.length > 0) {
-      throw new BadRequestException(
-        `Conflicto: el docente ${conflictoDocente.rows[0].docente} ya tiene asignada "${conflictoDocente.rows[0].mat_nombre}" en ese día y bloque`,
-      );
-    }
+    // Validar conflictos en cada bloque
+    for (const bloque of bloquesOcupados.rows) {
+      // Conflicto de docente
+      if (prog.doc_id) {
+        const conflictoDocente = await this.db.query(
+          `SELECT m.mat_nombre, CONCAT(u.usu_apellidos, ' ', u.usu_nombres) AS docente
+           FROM tbl_horarios h
+           INNER JOIN tbl_programacion_academica pa ON h.pra_id = pa.pra_id
+           INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
+           INNER JOIN tbl_docentes d ON pa.doc_id = d.doc_id
+           INNER JOIN tbl_usuarios u ON d.usu_id = u.usu_id
+           INNER JOIN tbl_bloques_horarios bi ON h.blq_id_inicio = bi.blq_id
+           INNER JOIN tbl_bloques_horarios bf ON h.blq_id_fin = bf.blq_id
+           WHERE h.dia_id = $1 AND bi.blq_orden <= $2 AND bf.blq_orden >= $2 AND h.hor_estado = TRUE
+           AND pa.doc_id = $3`,
+          [dto.dia_id, bloque.blq_orden, prog.doc_id],
+        );
 
-    // Validar que no haya conflicto de aula (mismo día, bloque y aula)
-    if (dto.aul_id) {
-      const conflictoAula = await this.db.query(
-        `SELECT h.hor_id, m.mat_nombre, a.aul_nombre
-         FROM tbl_horarios h
-         INNER JOIN tbl_programacion_academica pa ON h.pra_id = pa.pra_id
-         INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
-         INNER JOIN tbl_aulas a ON h.aul_id = a.aul_id
-         WHERE h.dia_id = $1 AND h.blq_id = $2 AND h.aul_id = $3 AND h.hor_estado = TRUE`,
-        [dto.dia_id, dto.blq_id, dto.aul_id],
+        if (conflictoDocente.rows.length > 0) {
+          throw new BadRequestException(
+            `Conflicto: el docente ${conflictoDocente.rows[0].docente} ya tiene "${conflictoDocente.rows[0].mat_nombre}" en ${bloque.blq_hora_inicio}-${bloque.blq_hora_fin}`,
+          );
+        }
+      }
+
+      // Conflicto de aula
+      if (dto.aul_id) {
+        const conflictoAula = await this.db.query(
+          `SELECT m.mat_nombre, a.aul_nombre
+           FROM tbl_horarios h
+           INNER JOIN tbl_programacion_academica pa ON h.pra_id = pa.pra_id
+           INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
+           INNER JOIN tbl_aulas a ON h.aul_id = a.aul_id
+           INNER JOIN tbl_bloques_horarios bi ON h.blq_id_inicio = bi.blq_id
+           INNER JOIN tbl_bloques_horarios bf ON h.blq_id_fin = bf.blq_id
+           WHERE h.dia_id = $1 AND bi.blq_orden <= $2 AND bf.blq_orden >= $2 AND h.aul_id = $3 AND h.hor_estado = TRUE`,
+          [dto.dia_id, bloque.blq_orden, dto.aul_id],
+        );
+
+        if (conflictoAula.rows.length > 0) {
+          throw new BadRequestException(
+            `Conflicto: el aula ${conflictoAula.rows[0].aul_nombre} ya está ocupada por "${conflictoAula.rows[0].mat_nombre}" en ${bloque.blq_hora_inicio}-${bloque.blq_hora_fin}`,
+          );
+        }
+      }
+
+      // Duplicado de materia
+      const duplicado = await this.db.query(
+        `SELECT h.hor_id FROM tbl_horarios h
+         INNER JOIN tbl_bloques_horarios bi ON h.blq_id_inicio = bi.blq_id
+         INNER JOIN tbl_bloques_horarios bf ON h.blq_id_fin = bf.blq_id
+         WHERE h.pra_id = $1 AND h.dia_id = $2 AND bi.blq_orden <= $3 AND bf.blq_orden >= $3 AND h.hor_estado = TRUE`,
+        [dto.pra_id, dto.dia_id, bloque.blq_orden],
       );
 
-      if (conflictoAula.rows.length > 0) {
+      if (duplicado.rows.length > 0) {
         throw new BadRequestException(
-          `Conflicto: el aula ${conflictoAula.rows[0].aul_nombre} ya está ocupada por "${conflictoAula.rows[0].mat_nombre}" en ese día y bloque`,
+          `Ya existe un horario para esa materia en ${bloque.blq_hora_inicio}-${bloque.blq_hora_fin}`,
         );
       }
     }
 
-    // Validar que no se duplique el mismo horario
-    const duplicado = await this.db.query(
-      "SELECT hor_id FROM tbl_horarios WHERE pra_id = $1 AND dia_id = $2 AND blq_id = $3 AND hor_estado = TRUE",
-      [dto.pra_id, dto.dia_id, dto.blq_id],
-    );
-
-    if (duplicado.rows.length > 0) {
-      throw new BadRequestException(
-        "Ya existe un horario para esa materia en ese día y bloque",
-      );
-    }
-
+    // Crear el horario
     const result = await this.db.query(
-      `INSERT INTO tbl_horarios (pra_id, dia_id, blq_id, aul_id, hor_observaciones, hor_estado)
-       VALUES ($1, $2, $3, $4, $5, TRUE) RETURNING *`,
+      `INSERT INTO tbl_horarios (pra_id, dia_id, blq_id_inicio, blq_id_fin, aul_id, hor_duracion, hor_observaciones, hor_estado)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE) RETURNING *`,
       [
         dto.pra_id,
         dto.dia_id,
-        dto.blq_id,
+        dto.blq_id_inicio,
+        dto.blq_id_fin,
         dto.aul_id ?? null,
+        duracion,
         dto.hor_observaciones ?? null,
       ],
     );
 
-    const bloquesRestantes = totalBloquesSemana - (bloquesActuales + 1);
+    const horasRestantes = totalHorasSemana - horasNuevas;
 
     return {
       message: "Horario asignado exitosamente",
       horario: result.rows[0],
       resumen: {
         materia: prog.mat_nombre,
-        horas_docencia_semana: horasDocenciaSemana,
-        horas_practica_semana: horasPracticaSemana,
-        total_bloques_semana: totalBloquesSemana,
-        bloques_asignados: bloquesActuales + 1,
-        bloques_restantes: bloquesRestantes,
-        completo: bloquesRestantes === 0,
+        total_horas_semana: totalHorasSemana,
+        horas_asignadas: horasNuevas,
+        horas_restantes: horasRestantes,
+        completo: horasRestantes === 0,
+        horario_asignado: `${bloqueInicio.rows[0].blq_hora_inicio} - ${bloqueFin.rows[0].blq_hora_fin} (${duracion}h)`,
       },
     };
   }
 
-  // Obtener horarios de una programación académica
   async getHorariosByProgramacion(praId: number) {
     const result = await this.db.query(
-      `SELECT h.*, d.dia_nombre, d.dia_abreviatura, 
-              b.blq_hora_inicio, b.blq_hora_fin, b.blq_descripcion,
+      `SELECT h.*, d.dia_nombre, d.dia_abreviatura,
+              bi.blq_hora_inicio, bf.blq_hora_fin, h.hor_duracion,
               a.aul_nombre, a.aul_codigo
        FROM tbl_horarios h
        INNER JOIN tbl_dias d ON h.dia_id = d.dia_id
-       INNER JOIN tbl_bloques_horarios b ON h.blq_id = b.blq_id
+       INNER JOIN tbl_bloques_horarios bi ON h.blq_id_inicio = bi.blq_id
+       INNER JOIN tbl_bloques_horarios bf ON h.blq_id_fin = bf.blq_id
        LEFT JOIN tbl_aulas a ON h.aul_id = a.aul_id
        WHERE h.pra_id = $1 AND h.hor_estado = TRUE
-       ORDER BY d.dia_orden, b.blq_orden`,
+       ORDER BY d.dia_orden, bi.blq_orden`,
       [praId],
     );
     return result.rows;
@@ -1643,7 +1687,7 @@ export class ProgramacionAcademicaService {
   async getHorarioCompleto(perId: number, carId: number) {
     const result = await this.db.query(
       `SELECT h.hor_id, d.dia_nombre, d.dia_orden, d.dia_abreviatura,
-              b.blq_hora_inicio, b.blq_hora_fin, b.blq_orden,
+              bi.blq_hora_inicio, bf.blq_hora_fin, bi.blq_orden, h.hor_duracion,
               m.mat_codigo, m.mat_nombre, pa.pra_nivel, pa.pra_nrc,
               p.par_nombre,
               CONCAT(u.usu_apellidos, ' ', u.usu_nombres) AS docente_nombre,
@@ -1654,12 +1698,13 @@ export class ProgramacionAcademicaService {
        INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
        INNER JOIN tbl_paralelos p ON pa.par_id = p.par_id
        INNER JOIN tbl_dias d ON h.dia_id = d.dia_id
-       INNER JOIN tbl_bloques_horarios b ON h.blq_id = b.blq_id
+       INNER JOIN tbl_bloques_horarios bi ON h.blq_id_inicio = bi.blq_id
+       INNER JOIN tbl_bloques_horarios bf ON h.blq_id_fin = bf.blq_id
        LEFT JOIN tbl_docentes doc ON pa.doc_id = doc.doc_id
        LEFT JOIN tbl_usuarios u ON doc.usu_id = u.usu_id
        LEFT JOIN tbl_aulas a ON h.aul_id = a.aul_id
        WHERE pa.per_id = $1 AND pa.car_id = $2 AND h.hor_estado = TRUE AND pa.pra_estado = TRUE
-       ORDER BY pa.pra_nivel, d.dia_orden, b.blq_orden`,
+       ORDER BY pa.pra_nivel, d.dia_orden, bi.blq_orden`,
       [perId, carId],
     );
     return result.rows;
@@ -1669,7 +1714,7 @@ export class ProgramacionAcademicaService {
   async getHorarioDocente(docId: number, perId: number) {
     const result = await this.db.query(
       `SELECT h.hor_id, d.dia_nombre, d.dia_orden,
-              b.blq_hora_inicio, b.blq_hora_fin,
+              bi.blq_hora_inicio, bf.blq_hora_fin, h.hor_duracion,
               m.mat_codigo, m.mat_nombre, pa.pra_nivel, pa.pra_nrc,
               p.par_nombre, c.car_nombre,
               a.aul_nombre
@@ -1679,10 +1724,11 @@ export class ProgramacionAcademicaService {
        INNER JOIN tbl_paralelos p ON pa.par_id = p.par_id
        INNER JOIN tbl_carreras c ON pa.car_id = c.car_id
        INNER JOIN tbl_dias d ON h.dia_id = d.dia_id
-       INNER JOIN tbl_bloques_horarios b ON h.blq_id = b.blq_id
+       INNER JOIN tbl_bloques_horarios bi ON h.blq_id_inicio = bi.blq_id
+       INNER JOIN tbl_bloques_horarios bf ON h.blq_id_fin = bf.blq_id
        LEFT JOIN tbl_aulas a ON h.aul_id = a.aul_id
        WHERE pa.doc_id = $1 AND pa.per_id = $2 AND h.hor_estado = TRUE AND pa.pra_estado = TRUE
-       ORDER BY d.dia_orden, b.blq_orden`,
+       ORDER BY d.dia_orden, bi.blq_orden`,
       [docId, perId],
     );
     return result.rows;

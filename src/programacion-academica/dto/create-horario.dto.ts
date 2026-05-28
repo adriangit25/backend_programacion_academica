@@ -12,10 +12,15 @@ export class CreateHorarioDto {
   @IsNumber()
   dia_id: number;
 
-  @ApiProperty({ description: "ID del bloque horario", example: 1 })
-  @IsNotEmpty({ message: "El bloque horario es obligatorio" })
+  @ApiProperty({ description: "ID del bloque horario de inicio", example: 1 })
+  @IsNotEmpty({ message: "El bloque de inicio es obligatorio" })
   @IsNumber()
-  blq_id: number;
+  blq_id_inicio: number;
+
+  @ApiProperty({ description: "ID del bloque horario de fin", example: 3 })
+  @IsNotEmpty({ message: "El bloque de fin es obligatorio" })
+  @IsNumber()
+  blq_id_fin: number;
 
   @ApiProperty({ description: "ID del aula", required: false })
   @IsOptional()
