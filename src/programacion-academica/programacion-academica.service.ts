@@ -26,6 +26,7 @@ import { CreateProgramacionDto } from "./dto/create-programacion.dto";
 import { AbrirNivelDto } from "./dto/abrir-nivel.dto";
 import { AbrirMateriasDto } from "./dto/abrir-materias.dto";
 import { CreateHorarioDto } from "./dto/create-horario.dto";
+import { ConfigIADto } from "./dto/config-ia.dto";
 import * as bcrypt from "bcrypt";
 
 @Injectable()
@@ -1775,13 +1776,24 @@ export class ProgramacionAcademicaService {
 
   // ==================== ALGORITMO GENÉTICO (IA) ====================
 
-  async generarHorariosIA(perId: number, carId: number, escId: number) {
+  async generarHorariosIA(config: ConfigIADto) {
     const response = await fetch(
       "http://host.docker.internal:5050/api/generar-horarios",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ per_id: perId, car_id: carId, esc_id: escId }),
+        body: JSON.stringify({
+          per_id: config.per_id,
+          car_id: config.car_id,
+          esc_id: config.esc_id,
+          nivel: config.nivel,
+          par_id: config.par_id,
+          dias_permitidos: config.dias_permitidos,
+          hora_inicio: config.hora_inicio,
+          hora_fin: config.hora_fin,
+          duracion_min: config.duracion_min,
+          duracion_max: config.duracion_max,
+        }),
       },
     );
 

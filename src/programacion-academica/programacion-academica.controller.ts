@@ -33,6 +33,7 @@ import { CreateProgramacionDto } from "./dto/create-programacion.dto";
 import { AbrirNivelDto } from "./dto/abrir-nivel.dto";
 import { AbrirMateriasDto } from "./dto/abrir-materias.dto";
 import { CreateHorarioDto } from "./dto/create-horario.dto";
+import { ConfigIADto } from "./dto/config-ia.dto";
 
 @ApiTags("Programación Académica")
 @Controller("programacion-academica")
@@ -1115,18 +1116,12 @@ export class ProgramacionAcademicaController {
   @ApiOperation({
     summary: "Generar horarios con IA",
     description:
-      "Ejecuta el algoritmo genético para generar horarios optimizados. Retorna una previsualización sin guardar.",
+      "Ejecuta el algoritmo genético con configuración personalizada: nivel, paralelo, días, rango de horas y duración de bloques.",
   })
   @ApiResponse({ status: 200, description: "Horarios generados exitosamente" })
   @ApiResponse({ status: 400, description: "Error al generar horarios" })
-  generarHorariosIA(
-    @Body() body: { per_id: number; car_id: number; esc_id: number },
-  ) {
-    return this.service.generarHorariosIA(
-      body.per_id,
-      body.car_id,
-      body.esc_id,
-    );
+  generarHorariosIA(@Body() config: ConfigIADto) {
+    return this.service.generarHorariosIA(config);
   }
 
   @Post("ia/confirmar-horarios")
