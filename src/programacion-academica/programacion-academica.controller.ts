@@ -1108,4 +1108,53 @@ export class ProgramacionAcademicaController {
   deleteHorario(@Param("id", ParseIntPipe) id: number) {
     return this.service.deleteHorario(id);
   }
+
+  // ==================== ALGORITMO GENÉTICO (IA) ====================
+
+  @Post("ia/generar-horarios")
+  @ApiOperation({
+    summary: "Generar horarios con IA",
+    description:
+      "Ejecuta el algoritmo genético para generar horarios optimizados. Retorna una previsualización sin guardar.",
+  })
+  @ApiResponse({ status: 200, description: "Horarios generados exitosamente" })
+  @ApiResponse({ status: 400, description: "Error al generar horarios" })
+  generarHorariosIA(
+    @Body() body: { per_id: number; car_id: number; esc_id: number },
+  ) {
+    return this.service.generarHorariosIA(
+      body.per_id,
+      body.car_id,
+      body.esc_id,
+    );
+  }
+
+  @Post("ia/confirmar-horarios")
+  @ApiOperation({
+    summary: "Confirmar horarios generados",
+    description: "Guarda los horarios generados por IA en la base de datos",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "Horarios confirmados exitosamente",
+  })
+  confirmarHorariosIA(
+    @Body() body: { per_id: number; car_id: number; horarios: any[] },
+  ) {
+    return this.service.confirmarHorariosIA(
+      body.per_id,
+      body.car_id,
+      body.horarios,
+    );
+  }
+
+  @Post("ia/limpiar-horarios")
+  @ApiOperation({
+    summary: "Limpiar horarios IA",
+    description: "Elimina los horarios generados por IA para regenerar",
+  })
+  @ApiResponse({ status: 200, description: "Horarios eliminados exitosamente" })
+  limpiarHorariosIA(@Body() body: { per_id: number; car_id: number }) {
+    return this.service.limpiarHorariosIA(body.per_id, body.car_id);
+  }
 }

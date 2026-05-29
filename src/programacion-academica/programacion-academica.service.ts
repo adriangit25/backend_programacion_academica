@@ -1772,4 +1772,65 @@ export class ProgramacionAcademicaService {
     // Crear el nuevo (para que pase por las validaciones de conflicto)
     return this.createHorario(dto);
   }
+
+  // ==================== ALGORITMO GENÉTICO (IA) ====================
+
+  async generarHorariosIA(perId: number, carId: number, escId: number) {
+    const response = await fetch(
+      "http://host.docker.internal:5050/api/generar-horarios",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ per_id: perId, car_id: carId, esc_id: escId }),
+      },
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new BadRequestException(data.error || "Error al generar horarios");
+    }
+
+    return data;
+  }
+
+  async confirmarHorariosIA(perId: number, carId: number, horarios: any[]) {
+    const response = await fetch(
+      "http://host.docker.internal:5050/api/confirmar-horarios",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ per_id: perId, car_id: carId, horarios }),
+      },
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new BadRequestException(
+        data.error || "Error al confirmar horarios",
+      );
+    }
+
+    return data;
+  }
+
+  async limpiarHorariosIA(perId: number, carId: number) {
+    const response = await fetch(
+      "http://host.docker.internal:5050/api/limpiar-horarios-ia",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ per_id: perId, car_id: carId }),
+      },
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new BadRequestException(data.error || "Error al limpiar horarios");
+    }
+
+    return data;
+  }
 }
