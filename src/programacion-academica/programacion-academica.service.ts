@@ -1793,6 +1793,8 @@ export class ProgramacionAcademicaService {
           hora_fin: config.hora_fin,
           duracion_min: config.duracion_min,
           duracion_max: config.duracion_max,
+          laboratorios_disponibles: config.laboratorios_disponibles ?? [],
+          horarios_previos: config.horarios_previos ?? [],
         }),
       },
     );

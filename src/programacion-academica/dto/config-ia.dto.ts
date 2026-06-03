@@ -28,43 +28,48 @@ export class ConfigIADto {
   par_id: number;
 
   @ApiProperty({
-    description:
-      "IDs de los días permitidos (ej: [1,2,3,4,5] para lunes a viernes)",
+    description: "IDs de los días permitidos",
     example: [1, 2, 3, 4, 5],
   })
   @IsNotEmpty()
   @IsArray()
   dias_permitidos: number[];
 
-  @ApiProperty({
-    description: "Hora de inicio mínima (ej: 7 para 07:00)",
-    example: 7,
-  })
+  @ApiProperty({ description: "Hora de inicio mínima", example: 7 })
   @IsNotEmpty()
   @IsNumber()
   hora_inicio: number;
 
-  @ApiProperty({
-    description: "Hora de fin máxima (ej: 13 para 13:00)",
-    example: 13,
-  })
+  @ApiProperty({ description: "Hora de fin máxima", example: 13 })
   @IsNotEmpty()
   @IsNumber()
   hora_fin: number;
 
-  @ApiProperty({
-    description: "Duración mínima de cada bloque en horas",
-    example: 2,
-  })
+  @ApiProperty({ description: "Duración mínima de cada bloque", example: 2 })
   @IsNotEmpty()
   @IsNumber()
   duracion_min: number;
 
-  @ApiProperty({
-    description: "Duración máxima de cada bloque en horas",
-    example: 3,
-  })
+  @ApiProperty({ description: "Duración máxima de cada bloque", example: 3 })
   @IsNotEmpty()
   @IsNumber()
   duracion_max: number;
+
+  @ApiProperty({
+    description: "IDs de los laboratorios disponibles para que la IA sugiera",
+    example: [5, 8, 12, 15],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  laboratorios_disponibles?: number[];
+
+  @ApiProperty({
+    description:
+      "Horarios ya generados de otros niveles (sin confirmar) para evitar cruces de laboratorio",
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  horarios_previos?: any[];
 }
