@@ -1502,6 +1502,27 @@ export class ProgramacionAcademicaService {
     return { message: "Programación eliminada exitosamente" };
   }
 
+  // Eliminar todas las materias de un nivel de un plan
+  async deleteNivelPlan(plnId: number, nivel: number) {
+    const materias = await this.db.query(
+      "SELECT mat_id FROM tbl_materias WHERE pln_id = $1 AND mat_nivel = $2 AND mat_estado = TRUE",
+      [plnId, nivel],
+    );
+
+    if (materias.rows.length === 0) {
+      throw new NotFoundException("No se encontraron materias en ese nivel");
+    }
+
+    await this.db.query(
+      "UPDATE tbl_materias SET mat_estado = FALSE WHERE pln_id = $1 AND mat_nivel = $2",
+      [plnId, nivel],
+    );
+
+    return {
+      message: `Nivel ${nivel} eliminado con ${materias.rows.length} materias`,
+    };
+  }
+
   // ==================== HORARIOS ====================
 
   async createHorario(dto: CreateHorarioDto) {

@@ -1035,6 +1035,17 @@ export class ProgramacionAcademicaController {
     return this.service.deleteProgramacion(id);
   }
 
+  @Delete("materias/plan/:plnId/nivel/:nivel")
+  @ApiOperation({ summary: "Eliminar nivel completo de un plan de estudio" })
+  @ApiResponse({ status: 200, description: "Nivel eliminado exitosamente" })
+  @ApiResponse({ status: 404, description: "No se encontraron materias" })
+  deleteNivelPlan(
+    @Param("plnId", ParseIntPipe) plnId: number,
+    @Param("nivel", ParseIntPipe) nivel: number,
+  ) {
+    return this.service.deleteNivelPlan(plnId, nivel);
+  }
+
   // ==================== HORARIOS ====================
 
   @Post("horarios")
