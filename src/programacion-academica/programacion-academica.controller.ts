@@ -34,6 +34,8 @@ import { AbrirNivelDto } from "./dto/abrir-nivel.dto";
 import { AbrirMateriasDto } from "./dto/abrir-materias.dto";
 import { CreateHorarioDto } from "./dto/create-horario.dto";
 import { ConfigIADto } from "./dto/config-ia.dto";
+import { Response } from "express";
+import { Res } from "@nestjs/common";
 
 @ApiTags("Programación Académica")
 @Controller("programacion-academica")
@@ -946,6 +948,12 @@ export class ProgramacionAcademicaController {
     return this.service.getDocentesByEscuela(escId);
   }
 
+  @Get("docentes/usuario/:usuId")
+  @ApiOperation({ summary: "Obtener perfil de docente por usuario" })
+  getDocenteByUsuario(@Param("usuId", ParseIntPipe) usuId: number) {
+    return this.service.getDocenteByUsuario(usuId);
+  }
+
   // ==================== PROGRAMACIÓN ACADÉMICA ====================
 
   @Post("programacion/abrir-nivel")
@@ -1162,5 +1170,58 @@ export class ProgramacionAcademicaController {
   @ApiResponse({ status: 200, description: "Horarios eliminados exitosamente" })
   limpiarHorariosIA(@Body() body: { per_id: number; car_id: number }) {
     return this.service.limpiarHorariosIA(body.per_id, body.car_id);
+  }
+
+  /////////////////////////EXPORTACIÓN DE HORARIOS A PDF/EXCEL/////////////////////////
+
+  @Get("exportar-horarios/:perId/:carId")
+  async exportarHorarios(
+    @Param("perId", ParseIntPipe) perId: number,
+    @Param("carId", ParseIntPipe) carId: number,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.service.exportarHorariosExcel(perId, carId);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=horarios_${perId}_${carId}.xlsx`,
+    );
+    res.send(buffer);
+  }
+
+  @Get("reporte-carga-docente/periodo/:perId")
+  @ApiOperation({ summary: "Reporte de carga docente por periodo" })
+  getReporteCargaDocente(
+    @Param("perId", ParseIntPipe) perId: number,
+    @Query("escId") escId?: string,
+  ) {
+    return this.service.getReporteCargaDocente(
+      perId,
+      escId ? parseInt(escId) : undefined,
+    );
+  }
+
+  @Get("exportar-carga-docente/:perId")
+  async exportarCargaDocente(
+    @Param("perId", ParseIntPipe) perId: number,
+    @Query("escId") escId: string,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.service.exportarCargaDocenteExcel(
+      perId,
+      escId ? parseInt(escId) : undefined,
+    );
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=carga_docente_${perId}.xlsx`,
+    );
+    res.send(buffer);
   }
 }

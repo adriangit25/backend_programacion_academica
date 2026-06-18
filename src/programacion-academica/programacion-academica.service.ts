@@ -1309,6 +1309,22 @@ export class ProgramacionAcademicaService {
     return result.rows;
   }
 
+  async getDocenteByUsuario(usuId: number) {
+    const result = await this.db.query(
+      `SELECT d.*, u.usu_nombres, u.usu_apellidos, u.usu_identificacion
+     FROM tbl_docentes d
+     INNER JOIN tbl_usuarios u ON d.usu_id = u.usu_id
+     WHERE d.usu_id = $1`,
+      [usuId],
+    );
+    if (result.rows.length === 0) {
+      throw new NotFoundException(
+        "Este usuario no tiene perfil de docente asociado",
+      );
+    }
+    return result.rows[0];
+  }
+
   // ==================== PROGRAMACIÓN ACADÉMICA ====================
 
   // Abrir nivel completo
@@ -1708,25 +1724,27 @@ export class ProgramacionAcademicaService {
   // Ver horario completo de un período y carrera (vista tipo grilla)
   async getHorarioCompleto(perId: number, carId: number) {
     const result = await this.db.query(
-      `SELECT h.hor_id, d.dia_nombre, d.dia_orden, d.dia_abreviatura,
-              bi.blq_hora_inicio, bf.blq_hora_fin, bi.blq_orden, h.hor_duracion,
-              m.mat_codigo, m.mat_nombre, pa.pra_nivel, pa.pra_nrc,
-              p.par_nombre,
-              CONCAT(u.usu_apellidos, ' ', u.usu_nombres) AS docente_nombre,
-              a.aul_nombre, a.aul_codigo,
-              pa.pra_modalidad
-       FROM tbl_horarios h
-       INNER JOIN tbl_programacion_academica pa ON h.pra_id = pa.pra_id
-       INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
-       INNER JOIN tbl_paralelos p ON pa.par_id = p.par_id
-       INNER JOIN tbl_dias d ON h.dia_id = d.dia_id
-       INNER JOIN tbl_bloques_horarios bi ON h.blq_id_inicio = bi.blq_id
-       INNER JOIN tbl_bloques_horarios bf ON h.blq_id_fin = bf.blq_id
-       LEFT JOIN tbl_docentes doc ON pa.doc_id = doc.doc_id
-       LEFT JOIN tbl_usuarios u ON doc.usu_id = u.usu_id
-       LEFT JOIN tbl_aulas a ON h.aul_id = a.aul_id
-       WHERE pa.per_id = $1 AND pa.car_id = $2 AND h.hor_estado = TRUE AND pa.pra_estado = TRUE
-       ORDER BY pa.pra_nivel, d.dia_orden, bi.blq_orden`,
+      `SELECT h.hor_id, h.pra_id, h.dia_id, h.blq_id_inicio, h.blq_id_fin, h.aul_id, h.hor_observaciones,
+            d.dia_nombre, d.dia_orden, d.dia_abreviatura,
+            bi.blq_hora_inicio, bf.blq_hora_fin, bi.blq_orden, h.hor_duracion,
+            m.mat_codigo, m.mat_nombre, pa.pra_nivel, pa.par_id, pa.pra_nrc,
+            COALESCE(h.doc_id, pa.doc_id) AS doc_id,
+            p.par_nombre,
+            CONCAT(u.usu_apellidos, ' ', u.usu_nombres) AS docente_nombre,
+            a.aul_nombre, a.aul_codigo,
+            pa.pra_modalidad
+     FROM tbl_horarios h
+     INNER JOIN tbl_programacion_academica pa ON h.pra_id = pa.pra_id
+     INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
+     INNER JOIN tbl_paralelos p ON pa.par_id = p.par_id
+     INNER JOIN tbl_dias d ON h.dia_id = d.dia_id
+     INNER JOIN tbl_bloques_horarios bi ON h.blq_id_inicio = bi.blq_id
+     INNER JOIN tbl_bloques_horarios bf ON h.blq_id_fin = bf.blq_id
+     LEFT JOIN tbl_docentes doc ON COALESCE(h.doc_id, pa.doc_id) = doc.doc_id
+     LEFT JOIN tbl_usuarios u ON doc.usu_id = u.usu_id
+     LEFT JOIN tbl_aulas a ON h.aul_id = a.aul_id
+     WHERE pa.per_id = $1 AND pa.car_id = $2 AND h.hor_estado = TRUE AND pa.pra_estado = TRUE
+     ORDER BY pa.pra_nivel, d.dia_orden, bi.blq_orden`,
       [perId, carId],
     );
     return result.rows;
@@ -1736,21 +1754,21 @@ export class ProgramacionAcademicaService {
   async getHorarioDocente(docId: number, perId: number) {
     const result = await this.db.query(
       `SELECT h.hor_id, d.dia_nombre, d.dia_orden,
-              bi.blq_hora_inicio, bf.blq_hora_fin, h.hor_duracion,
-              m.mat_codigo, m.mat_nombre, pa.pra_nivel, pa.pra_nrc,
-              p.par_nombre, c.car_nombre,
-              a.aul_nombre
-       FROM tbl_horarios h
-       INNER JOIN tbl_programacion_academica pa ON h.pra_id = pa.pra_id
-       INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
-       INNER JOIN tbl_paralelos p ON pa.par_id = p.par_id
-       INNER JOIN tbl_carreras c ON pa.car_id = c.car_id
-       INNER JOIN tbl_dias d ON h.dia_id = d.dia_id
-       INNER JOIN tbl_bloques_horarios bi ON h.blq_id_inicio = bi.blq_id
-       INNER JOIN tbl_bloques_horarios bf ON h.blq_id_fin = bf.blq_id
-       LEFT JOIN tbl_aulas a ON h.aul_id = a.aul_id
-       WHERE pa.doc_id = $1 AND pa.per_id = $2 AND h.hor_estado = TRUE AND pa.pra_estado = TRUE
-       ORDER BY d.dia_orden, bi.blq_orden`,
+            bi.blq_hora_inicio, bf.blq_hora_fin, h.hor_duracion,
+            m.mat_codigo, m.mat_nombre, pa.pra_nivel, pa.pra_nrc,
+            p.par_nombre, c.car_nombre,
+            a.aul_nombre
+     FROM tbl_horarios h
+     INNER JOIN tbl_programacion_academica pa ON h.pra_id = pa.pra_id
+     INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
+     INNER JOIN tbl_paralelos p ON pa.par_id = p.par_id
+     INNER JOIN tbl_carreras c ON pa.car_id = c.car_id
+     INNER JOIN tbl_dias d ON h.dia_id = d.dia_id
+     INNER JOIN tbl_bloques_horarios bi ON h.blq_id_inicio = bi.blq_id
+     INNER JOIN tbl_bloques_horarios bf ON h.blq_id_fin = bf.blq_id
+     LEFT JOIN tbl_aulas a ON h.aul_id = a.aul_id
+     WHERE COALESCE(h.doc_id, pa.doc_id) = $1 AND pa.per_id = $2 AND h.hor_estado = TRUE AND pa.pra_estado = TRUE
+     ORDER BY d.dia_orden, bi.blq_orden`,
       [docId, perId],
     );
     return result.rows;
@@ -1867,5 +1885,409 @@ export class ProgramacionAcademicaService {
     }
 
     return data;
+  }
+
+  // ==================== REPORTE DE CARGA DOCENTE ====================
+
+  async getReporteCargaDocente(perId: number, escId?: number) {
+    let query = `
+    SELECT d.doc_id, u.usu_nombres, u.usu_apellidos, u.usu_identificacion,
+           d.doc_dedicacion, d.doc_horas_minimas, d.doc_horas_maximas,
+           COALESCE(SUM(asign.horas), 0)::int as horas_asignadas
+    FROM tbl_docentes d
+    INNER JOIN tbl_usuarios u ON d.usu_id = u.usu_id
+    LEFT JOIN (
+      SELECT COALESCE(h.doc_id, pa.doc_id) AS doc_id_real, h.hor_duracion AS horas
+      FROM tbl_horarios h
+      INNER JOIN tbl_programacion_academica pa ON h.pra_id = pa.pra_id
+      WHERE pa.per_id = $1 AND pa.pra_estado = TRUE AND h.hor_estado = TRUE
+    ) asign ON asign.doc_id_real = d.doc_id
+    WHERE d.doc_estado = TRUE
+  `;
+    const params: any[] = [perId];
+
+    if (escId) {
+      query += ` AND d.esc_id = $2`;
+      params.push(escId);
+    }
+
+    query += `
+    GROUP BY d.doc_id, u.usu_nombres, u.usu_apellidos, u.usu_identificacion,
+             d.doc_dedicacion, d.doc_horas_minimas, d.doc_horas_maximas
+    ORDER BY u.usu_apellidos, u.usu_nombres
+  `;
+
+    const result = await this.db.query(query, params);
+    return result.rows.map((row) => {
+      let estado = "Normal";
+      if (row.horas_asignadas < row.doc_horas_minimas) estado = "Subcarga";
+      else if (row.horas_asignadas > row.doc_horas_maximas)
+        estado = "Sobrecarga";
+      return { ...row, estado };
+    });
+  }
+
+  async exportarCargaDocenteExcel(
+    perId: number,
+    escId?: number,
+  ): Promise<Buffer> {
+    const ExcelJS = require("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet("Carga Docente");
+
+    const reporte = await this.getReporteCargaDocente(perId, escId);
+
+    ws.columns = [
+      { header: "Docente", key: "docente", width: 35 },
+      { header: "Identificacion", key: "ident", width: 15 },
+      { header: "Dedicacion", key: "dedicacion", width: 18 },
+      { header: "Horas Min", key: "min", width: 12 },
+      { header: "Horas Max", key: "max", width: 12 },
+      { header: "Horas Asignadas", key: "asignadas", width: 16 },
+      { header: "Estado", key: "estado", width: 14 },
+    ];
+
+    ws.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    ws.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF1A3A5C" },
+    };
+
+    for (const item of reporte) {
+      const row = ws.addRow({
+        docente: `${item.usu_apellidos} ${item.usu_nombres}`,
+        ident: item.usu_identificacion,
+        dedicacion: item.doc_dedicacion,
+        min: item.doc_horas_minimas,
+        max: item.doc_horas_maximas,
+        asignadas: item.horas_asignadas,
+        estado: item.estado,
+      });
+
+      const estadoCell = row.getCell("estado");
+      if (item.estado === "Sobrecarga") {
+        estadoCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF8D7DA" },
+        };
+      } else if (item.estado === "Subcarga") {
+        estadoCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFFF3CD" },
+        };
+      } else {
+        estadoCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFD4EDDA" },
+        };
+      }
+    }
+
+    return workbook.xlsx.writeBuffer() as Promise<Buffer>;
+  }
+
+  /////////////////// ==================== REPORTE DE HORARIOS ====================
+  async exportarHorariosExcel(perId: number, carId: number): Promise<Buffer> {
+    const ExcelJS = require("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet("Horarios");
+
+    const result = await this.db.query(
+      `
+    SELECT 
+      pa.pra_nivel, par.par_nombre, d.dia_orden, d.dia_nombre,
+      bi.blq_hora_inicio::text as hora_inicio,
+      bf.blq_hora_fin::text   as hora_fin,
+      h.hor_duracion, m.mat_nombre, pa.pra_nrc,
+      COALESCE(CONCAT(u.usu_apellidos, ' ', u.usu_nombres), 'Sin Docente') as docente_nombre,
+      COALESCE(a.aul_nombre, '') as aul_nombre,
+      c.car_nombre, pe.per_nombre
+    FROM tbl_horarios h
+    INNER JOIN tbl_programacion_academica pa ON h.pra_id = pa.pra_id
+    INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
+    INNER JOIN tbl_paralelos par ON pa.par_id = par.par_id
+    INNER JOIN tbl_dias d ON h.dia_id = d.dia_id
+    INNER JOIN tbl_bloques_horarios bi ON h.blq_id_inicio = bi.blq_id
+    INNER JOIN tbl_bloques_horarios bf ON h.blq_id_fin = bf.blq_id
+    INNER JOIN tbl_carreras c ON pa.car_id = c.car_id
+    INNER JOIN tbl_periodos pe ON pa.per_id = pe.per_id
+    LEFT JOIN tbl_docentes doc ON COALESCE(h.doc_id, pa.doc_id) = doc.doc_id
+    LEFT JOIN tbl_usuarios u ON doc.usu_id = u.usu_id
+    LEFT JOIN tbl_aulas a ON h.aul_id = a.aul_id
+    WHERE pa.per_id = $1 AND pa.car_id = $2
+      AND h.hor_estado = TRUE AND pa.pra_estado = TRUE
+    ORDER BY pa.pra_nivel, par.par_nombre, d.dia_orden, bi.blq_orden
+  `,
+      [perId, carId],
+    );
+
+    const rows = result.rows;
+    if (rows.length === 0) return workbook.xlsx.writeBuffer();
+
+    const carNombre = rows[0].car_nombre;
+    const perNombre = rows[0].per_nombre;
+
+    const AZUL_OSC = "1A3A5C",
+      AZUL_MED = "2B5C8A";
+    const GRIS = "F2F2F2",
+      BLANCO = "FFFFFF";
+
+    const safeMerge = (range: string) => {
+      try {
+        ws.mergeCells(range);
+      } catch (_) {}
+    };
+
+    const border = (s = "thin") => ({
+      left: { style: s, color: { argb: "FF000000" } },
+      right: { style: s, color: { argb: "FF000000" } },
+      top: { style: s, color: { argb: "FF000000" } },
+      bottom: { style: s, color: { argb: "FF000000" } },
+    });
+    const fill = (color: string) => ({
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: `FF${color}` },
+    });
+    const font = (bold = false, size = 9, color = "000000") => ({
+      name: "Arial",
+      bold,
+      size,
+      color: { argb: `FF${color}` },
+    });
+    const align = (h = "center", v = "center", wrap = true) => ({
+      horizontal: h,
+      vertical: v,
+      wrapText: wrap,
+    });
+
+    ws.getColumn("A").width = 8;
+    ws.getColumn("B").width = 8;
+    ws.getColumn("C").width = 10;
+    ws.getColumn("J").width = 10;
+    for (const c of ["D", "E", "F", "G", "H", "I"]) ws.getColumn(c).width = 22;
+
+    for (let r = 1; r <= 6; r++) ws.getRow(r).height = 16;
+
+    safeMerge("A1:B6");
+    Object.assign(ws.getCell("A1"), {
+      value: "PONTIFICIA\nUNIVERSIDAD\nCATÓLICA\nDEL ECUADOR\nIBARRA",
+      font: font(true, 8, AZUL_OSC),
+      alignment: align(),
+      fill: fill("EBF4FF"),
+      border: border("medium"),
+    });
+
+    const headerData: [string, string, boolean, number][] = [
+      ["C1:J1", "HORARIOS DE CLASE", true, 14],
+      ["C2:J2", `PERIODO ACADÉMICO: ${perNombre}`, true, 9],
+      ["C3:J3", `PERIODO: ${perId}`, false, 9],
+      ["C4:J4", `CARRERA: ${carNombre.toUpperCase()}`, true, 9],
+      [
+        "C5:J5",
+        "Escuela de Hábitat, Infraestructura y Creatividad - PUCE Ibarra",
+        false,
+        8,
+      ],
+      [
+        "C6:J6",
+        "DIRECCIÓN DE DOCENCIA Y ESTUDIANTES  |  Formato Programación Académica v2.8",
+        false,
+        7,
+      ],
+    ];
+    for (const [range, value, bold, size] of headerData) {
+      safeMerge(range);
+      Object.assign(ws.getCell(range.split(":")[0]), {
+        value,
+        font: font(bold, size, AZUL_OSC),
+        alignment: align(),
+        fill: fill("EBF4FF"),
+        border: border(),
+      });
+    }
+
+    const COLORES = [
+      "D6E4F0",
+      "FCE4D6",
+      "E2EFDA",
+      "FFF2CC",
+      "EAD1DC",
+      "D0E4F7",
+      "F4CCCC",
+      "D9EAD3",
+      "CFE2F3",
+      "FFF0E6",
+    ];
+    const NIVELES_TXT = [
+      "PRIMER",
+      "SEGUNDO",
+      "TERCER",
+      "CUARTO",
+      "QUINTO",
+      "SEXTO",
+      "SÉPTIMO",
+      "OCTAVO",
+      "NOVENO",
+      "DÉCIMO",
+    ];
+    const DIA_COL: Record<number, string> = {
+      1: "D",
+      2: "E",
+      3: "F",
+      4: "G",
+      5: "H",
+      6: "I",
+    };
+
+    // Rastrear celdas ya mergeadas para evitar conflictos
+    const mergeadas = new Set<string>();
+
+    const addBloque = (
+      startRow: number,
+      nivel: number,
+      paralelo: string,
+      horarios: any[],
+    ) => {
+      const horas = Array.from({ length: 15 }, (_, i) => i + 7);
+      const endRow = startRow + horas.length - 1;
+
+      ws.getRow(startRow - 2).height = 18;
+      safeMerge(`A${startRow - 2}:J${startRow - 2}`);
+      Object.assign(ws.getCell(`A${startRow - 2}`), {
+        value: `MATERIAS DE CARRERA  –  ${NIVELES_TXT[nivel - 1] || nivel}° NIVEL`,
+        font: font(true, 10, BLANCO),
+        alignment: align(),
+        fill: fill(AZUL_OSC),
+        border: border("medium"),
+      });
+
+      ws.getRow(startRow - 1).height = 20;
+      const hdrs = [
+        ["A", "NIVEL"],
+        ["B", "PARALELO"],
+        ["C", "HORA"],
+        ["D", "LUNES"],
+        ["E", "MARTES"],
+        ["F", "MIÉRCOLES"],
+        ["G", "JUEVES"],
+        ["H", "VIERNES"],
+        ["I", "SÁBADO"],
+        ["J", "HORA"],
+      ];
+      for (const [col, txt] of hdrs) {
+        Object.assign(ws.getCell(`${col}${startRow - 1}`), {
+          value: txt,
+          font: font(true, 8, BLANCO),
+          alignment: align(),
+          fill: fill(AZUL_MED),
+          border: border(),
+        });
+      }
+
+      for (let i = 0; i < horas.length; i++) {
+        const h = horas[i],
+          r = startRow + i;
+        ws.getRow(r).height = 28;
+        const horaTxt =
+          h < 21
+            ? `${String(h).padStart(2, "0")}H00\n${String(h + 1).padStart(2, "0")}H00`
+            : "";
+        for (const col of ["C", "J"]) {
+          Object.assign(ws.getCell(`${col}${r}`), {
+            value: horaTxt,
+            font: font(true, 7),
+            alignment: align(),
+            fill: fill(GRIS),
+            border: border(),
+          });
+        }
+        for (const col of ["D", "E", "F", "G", "H", "I"]) {
+          Object.assign(ws.getCell(`${col}${r}`), {
+            fill: fill(BLANCO),
+            border: border(),
+          });
+        }
+      }
+
+      safeMerge(`A${startRow}:A${endRow}`);
+      Object.assign(ws.getCell(`A${startRow}`), {
+        value: `Nivel\n${nivel}`,
+        font: font(true, 9, BLANCO),
+        alignment: align(),
+        fill: fill(AZUL_OSC),
+        border: border("medium"),
+      });
+      safeMerge(`B${startRow}:B${endRow}`);
+      Object.assign(ws.getCell(`B${startRow}`), {
+        value: `PAR.\n${paralelo}`,
+        font: font(true, 9, BLANCO),
+        alignment: align(),
+        fill: fill(AZUL_MED),
+        border: border("medium"),
+      });
+
+      const matColor: Record<string, string> = {};
+      let colorIdx = 0;
+
+      for (const hor of horarios) {
+        const dia = hor.dia_orden;
+        if (!DIA_COL[dia]) continue;
+        const col = DIA_COL[dia];
+        const hIni = parseInt(hor.hora_inicio.substring(0, 2));
+        const hFin = parseInt(hor.hora_fin.substring(0, 2));
+        const dur = hFin - hIni;
+        if (hIni < 7 || hIni >= 21) continue;
+
+        const rIni = startRow + (hIni - 7);
+        const rFin = rIni + dur - 1;
+
+        // Verificar si la celda ya fue procesada
+        const cellKey = `${col}${rIni}`;
+        if (mergeadas.has(cellKey)) continue;
+        mergeadas.add(cellKey);
+
+        if (!matColor[hor.mat_nombre]) {
+          matColor[hor.mat_nombre] = COLORES[colorIdx++ % COLORES.length];
+        }
+        const bg = matColor[hor.mat_nombre];
+
+        if (dur > 1 && rFin <= endRow) {
+          safeMerge(`${col}${rIni}:${col}${rFin}`);
+        }
+
+        let txt = `${hor.mat_nombre}\n${hor.docente_nombre}`;
+        if (hor.aul_nombre) txt += `\n${hor.aul_nombre}`;
+        if (hor.pra_nrc) txt += `\nNRC: ${hor.pra_nrc}`;
+
+        Object.assign(ws.getCell(`${col}${rIni}`), {
+          value: txt,
+          font: font(false, 7),
+          alignment: align(),
+          fill: fill(bg),
+          border: border(),
+        });
+      }
+      return endRow + 1;
+    };
+
+    const grupos = new Map<string, any[]>();
+    for (const row of rows) {
+      const key = `${row.pra_nivel}||${row.par_nombre}`;
+      if (!grupos.has(key)) grupos.set(key, []);
+      grupos.get(key)!.push(row);
+    }
+
+    let currentRow = 9;
+    for (const [key, horarios] of grupos) {
+      const [nivel, paralelo] = key.split("||");
+      currentRow = addBloque(currentRow, Number(nivel), paralelo, horarios) + 3;
+    }
+
+    return workbook.xlsx.writeBuffer() as Promise<Buffer>;
   }
 }
