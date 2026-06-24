@@ -27,6 +27,7 @@ import { AbrirNivelDto } from "./dto/abrir-nivel.dto";
 import { AbrirMateriasDto } from "./dto/abrir-materias.dto";
 import { CreateHorarioDto } from "./dto/create-horario.dto";
 import { ConfigIADto } from "./dto/config-ia.dto";
+import { CreateBibliografiaDto } from "./dto/create-bibliografia.dto";
 import * as bcrypt from "bcrypt";
 
 @Injectable()
@@ -2289,5 +2290,324 @@ export class ProgramacionAcademicaService {
     }
 
     return workbook.xlsx.writeBuffer() as Promise<Buffer>;
+  }
+
+  // ==================== DASHBOARD ====================
+
+  private async getResumenCargaDocente(perId: number, escId?: number) {
+    const reporte = await this.getReporteCargaDocente(perId, escId);
+    const resumen = {
+      total: reporte.length,
+      normal: 0,
+      subcarga: 0,
+      sobrecarga: 0,
+    };
+    for (const r of reporte) {
+      if (r.estado === "Normal") resumen.normal++;
+      else if (r.estado === "Subcarga") resumen.subcarga++;
+      else if (r.estado === "Sobrecarga") resumen.sobrecarga++;
+    }
+    return resumen;
+  }
+
+  private async getPeriodoActivo() {
+    const result = await this.db.query(
+      "SELECT * FROM tbl_periodos WHERE per_estado = TRUE ORDER BY per_fecha_inicio DESC LIMIT 1",
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async getDashboardAdmin() {
+    const [escuelas, carreras, docentes, usuarios, periodoActivo] =
+      await Promise.all([
+        this.db.query(
+          "SELECT COUNT(*) FROM tbl_escuelas WHERE esc_estado = TRUE",
+        ),
+        this.db.query(
+          "SELECT COUNT(*) FROM tbl_carreras WHERE car_estado = TRUE",
+        ),
+        this.db.query(
+          "SELECT COUNT(*) FROM tbl_docentes WHERE doc_estado = TRUE",
+        ),
+        this.db.query(
+          "SELECT COUNT(*) FROM tbl_usuarios WHERE usu_estado = TRUE",
+        ),
+        this.getPeriodoActivo(),
+      ]);
+
+    let resumenCarga = null;
+    if (periodoActivo) {
+      resumenCarga = await this.getResumenCargaDocente(periodoActivo.per_id);
+    }
+
+    return {
+      total_escuelas: Number(escuelas.rows[0].count),
+      total_carreras: Number(carreras.rows[0].count),
+      total_docentes: Number(docentes.rows[0].count),
+      total_usuarios: Number(usuarios.rows[0].count),
+      periodo_activo: periodoActivo,
+      resumen_carga: resumenCarga,
+    };
+  }
+
+  async getDashboardCoordinador(usuId: number) {
+    const escuelas = await this.getEscuelaByCoordinador(usuId);
+    if (escuelas.length === 0) {
+      return { sin_escuela: true };
+    }
+    const escuela = escuelas[0];
+    const escId = Number(escuela.esc_id);
+
+    const [carrerasCoord, docentes, periodoActivo] = await Promise.all([
+      this.getCarrerasByCoordinador(usuId),
+      this.db.query(
+        "SELECT COUNT(*) FROM tbl_docentes WHERE esc_id = $1 AND doc_estado = TRUE",
+        [escId],
+      ),
+      this.getPeriodoActivo(),
+    ]);
+
+    let materiasProgramadas = 0;
+    let resumenCarga = null;
+
+    if (periodoActivo) {
+      const materiasRes = await this.db.query(
+        `SELECT COUNT(DISTINCT pa.pra_id) 
+       FROM tbl_programacion_academica pa
+       INNER JOIN tbl_carreras c ON pa.car_id = c.car_id
+       WHERE c.esc_id = $1 AND pa.per_id = $2 AND pa.pra_estado = TRUE`,
+        [escId, periodoActivo.per_id],
+      );
+      materiasProgramadas = Number(materiasRes.rows[0].count);
+      resumenCarga = await this.getResumenCargaDocente(
+        periodoActivo.per_id,
+        escId,
+      );
+    }
+
+    return {
+      escuela,
+      total_carreras: carrerasCoord.length,
+      total_docentes: Number(docentes.rows[0].count),
+      materias_programadas: materiasProgramadas,
+      periodo_activo: periodoActivo,
+      resumen_carga: resumenCarga,
+    };
+  }
+
+  async getDashboardDocente(usuId: number) {
+    let docente;
+    try {
+      docente = await this.getDocenteByUsuario(usuId);
+    } catch {
+      return { sin_perfil_docente: true };
+    }
+
+    const periodoActivo = await this.getPeriodoActivo();
+    if (!periodoActivo) {
+      return { docente, periodo_activo: null };
+    }
+
+    const horario = await this.getHorarioDocente(
+      docente.doc_id,
+      periodoActivo.per_id,
+    );
+
+    const totalHoras = horario.reduce(
+      (acc: number, h: any) => acc + Number(h.hor_duracion || 0),
+      0,
+    );
+    const materiasUnicas = new Set(
+      horario.map((h: any) => `${h.mat_codigo}-${h.par_nombre}`),
+    );
+
+    const proximaRes = await this.db.query(
+      `SELECT m.mat_nombre, bi.blq_hora_inicio, bf.blq_hora_fin, p.par_nombre, c.car_nombre, a.aul_nombre
+     FROM tbl_horarios h
+     INNER JOIN tbl_programacion_academica pa ON h.pra_id = pa.pra_id
+     INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
+     INNER JOIN tbl_paralelos p ON pa.par_id = p.par_id
+     INNER JOIN tbl_carreras c ON pa.car_id = c.car_id
+     INNER JOIN tbl_dias d ON h.dia_id = d.dia_id
+     INNER JOIN tbl_bloques_horarios bi ON h.blq_id_inicio = bi.blq_id
+     INNER JOIN tbl_bloques_horarios bf ON h.blq_id_fin = bf.blq_id
+     LEFT JOIN tbl_aulas a ON h.aul_id = a.aul_id
+     WHERE COALESCE(h.doc_id, pa.doc_id) = $1 AND pa.per_id = $2 
+       AND h.hor_estado = TRUE AND pa.pra_estado = TRUE
+       AND d.dia_orden = EXTRACT(ISODOW FROM CURRENT_DATE)
+       AND bi.blq_hora_inicio >= CURRENT_TIME
+     ORDER BY bi.blq_hora_inicio ASC
+     LIMIT 1`,
+      [docente.doc_id, periodoActivo.per_id],
+    );
+
+    return {
+      docente,
+      periodo_activo: periodoActivo,
+      horas_asignadas: totalHoras,
+      total_materias: materiasUnicas.size,
+      proxima_clase: proximaRes.rows[0] ?? null,
+    };
+  }
+
+  // ==================== BIBLIOGRAFIA ====================
+
+  async getMateriasParaBibliografia(docId: number, perId: number) {
+    const result = await this.db.query(
+      `SELECT DISTINCT pa.pra_id, m.mat_nombre, m.mat_codigo, pa.pra_nivel,
+            p.par_nombre, c.car_nombre
+     FROM tbl_programacion_academica pa
+     INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
+     INNER JOIN tbl_paralelos p ON pa.par_id = p.par_id
+     INNER JOIN tbl_carreras c ON pa.car_id = c.car_id
+     WHERE COALESCE(
+       (SELECT h.doc_id FROM tbl_horarios h
+        WHERE h.pra_id = pa.pra_id AND h.hor_estado = TRUE LIMIT 1),
+       pa.doc_id
+     ) = $1
+     AND pa.per_id = $2 AND pa.pra_estado = TRUE
+     ORDER BY pa.pra_nivel, m.mat_nombre`,
+      [docId, perId],
+    );
+    return result.rows;
+  }
+
+  async getBibliografiasByDocente(docId: number, perId: number) {
+    const result = await this.db.query(
+      `SELECT b.bib_id, b.pra_id, b.bib_titulo, b.bib_autor, b.bib_editorial,
+            b.bib_anio, b.bib_tipo, b.bib_enlace, b.bib_archivo_nombre,
+            m.mat_nombre, m.mat_codigo, pa.pra_nivel, p.par_nombre, c.car_nombre
+     FROM tbl_bibliografia b
+     INNER JOIN tbl_programacion_academica pa ON b.pra_id = pa.pra_id
+     INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
+     INNER JOIN tbl_paralelos p ON pa.par_id = p.par_id
+     INNER JOIN tbl_carreras c ON pa.car_id = c.car_id
+     WHERE b.pra_id IN (
+       SELECT pa2.pra_id
+       FROM tbl_programacion_academica pa2
+       WHERE COALESCE(
+         (SELECT h.doc_id FROM tbl_horarios h
+          WHERE h.pra_id = pa2.pra_id AND h.hor_estado = TRUE LIMIT 1),
+         pa2.doc_id
+       ) = $1
+       AND pa2.per_id = $2
+       AND pa2.pra_estado = TRUE
+     )
+     AND b.bib_estado = TRUE
+     ORDER BY pa.pra_nivel, m.mat_nombre, b.bib_id`,
+      [docId, perId],
+    );
+    return result.rows;
+  }
+
+  async createBibliografia(dto: CreateBibliografiaDto) {
+    const result = await this.db.query(
+      `INSERT INTO tbl_bibliografia
+     (pra_id, bib_titulo, bib_autor, bib_editorial, bib_anio, bib_tipo, bib_enlace, bib_estado)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE) RETURNING *`,
+      [
+        dto.pra_id,
+        dto.bib_titulo,
+        dto.bib_autor ?? null,
+        dto.bib_editorial ?? null,
+        dto.bib_anio ?? null,
+        dto.bib_tipo,
+        dto.bib_enlace ?? null,
+      ],
+    );
+    return {
+      message: "Bibliografía registrada exitosamente",
+      bibliografia: result.rows[0],
+    };
+  }
+
+  async updateBibliografia(id: number, dto: CreateBibliografiaDto) {
+    const result = await this.db.query(
+      `UPDATE tbl_bibliografia
+     SET bib_titulo=$1, bib_autor=$2, bib_editorial=$3, bib_anio=$4,
+         bib_tipo=$5, bib_enlace=$6
+     WHERE bib_id=$7 RETURNING *`,
+      [
+        dto.bib_titulo,
+        dto.bib_autor ?? null,
+        dto.bib_editorial ?? null,
+        dto.bib_anio ?? null,
+        dto.bib_tipo,
+        dto.bib_enlace ?? null,
+        id,
+      ],
+    );
+    return {
+      message: "Bibliografía actualizada",
+      bibliografia: result.rows[0],
+    };
+  }
+
+  async deleteBibliografia(id: number) {
+    await this.db.query(
+      "UPDATE tbl_bibliografia SET bib_estado = FALSE WHERE bib_id = $1",
+      [id],
+    );
+    return { message: "Bibliografía eliminada" };
+  }
+
+  async guardarArchivoEnBibliografia(
+    bibId: number,
+    buffer: Buffer,
+    nombreOriginal: string,
+  ) {
+    await this.db.query(
+      `UPDATE tbl_bibliografia
+     SET bib_archivo = $1, bib_archivo_nombre = $2, bib_tipo = 'archivo'
+     WHERE bib_id = $3`,
+      [buffer, nombreOriginal, bibId],
+    );
+    return { message: "Archivo guardado exitosamente", nombre: nombreOriginal };
+  }
+
+  async servirArchivoBibliografia(
+    bibId: number,
+  ): Promise<{ buffer: Buffer; nombre: string }> {
+    const result = await this.db.query(
+      "SELECT bib_archivo, bib_archivo_nombre FROM tbl_bibliografia WHERE bib_id = $1",
+      [bibId],
+    );
+    if (result.rows.length === 0 || !result.rows[0].bib_archivo) {
+      throw new NotFoundException("Archivo no encontrado");
+    }
+    return {
+      buffer: result.rows[0].bib_archivo,
+      nombre: result.rows[0].bib_archivo_nombre || `archivo_${bibId}.pdf`,
+    };
+  }
+
+  async getReporteBibliografiaCoordinador(perId: number, escId?: number) {
+    let query = `
+    SELECT b.bib_id, b.pra_id, b.bib_titulo, b.bib_autor, b.bib_editorial,
+           b.bib_anio, b.bib_tipo, b.bib_enlace, b.bib_archivo_nombre,
+           m.mat_nombre, m.mat_codigo, pa.pra_nivel,
+           p.par_nombre, c.car_nombre,
+           CONCAT(u.usu_apellidos, ' ', u.usu_nombres) AS docente_nombre
+    FROM tbl_bibliografia b
+    INNER JOIN tbl_programacion_academica pa ON b.pra_id = pa.pra_id
+    INNER JOIN tbl_materias m ON pa.mat_id = m.mat_id
+    INNER JOIN tbl_paralelos p ON pa.par_id = p.par_id
+    INNER JOIN tbl_carreras c ON pa.car_id = c.car_id
+    LEFT JOIN tbl_docentes d ON COALESCE(
+      (SELECT h.doc_id FROM tbl_horarios h
+       WHERE h.pra_id = pa.pra_id AND h.hor_estado = TRUE LIMIT 1),
+      pa.doc_id
+    ) = d.doc_id
+    LEFT JOIN tbl_usuarios u ON d.usu_id = u.usu_id
+    WHERE pa.per_id = $1 AND pa.pra_estado = TRUE AND b.bib_estado = TRUE
+  `;
+    const params: any[] = [perId];
+    if (escId) {
+      query += " AND c.esc_id = $2";
+      params.push(escId);
+    }
+    query += " ORDER BY pa.pra_nivel, c.car_nombre, m.mat_nombre, b.bib_id";
+    const result = await this.db.query(query, params);
+    return result.rows;
   }
 }

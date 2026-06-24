@@ -8,6 +8,7 @@ import {
   Param,
   ParseIntPipe,
   Query,
+  BadRequestException,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
 import { ProgramacionAcademicaService } from "./programacion-academica.service";
@@ -36,6 +37,9 @@ import { CreateHorarioDto } from "./dto/create-horario.dto";
 import { ConfigIADto } from "./dto/config-ia.dto";
 import { Response } from "express";
 import { Res } from "@nestjs/common";
+import { UseInterceptors, UploadedFile, StreamableFile } from "@nestjs/common";
+import { CreateBibliografiaDto } from "./dto/create-bibliografia.dto";
+import { FileInterceptor } from "@nestjs/platform-express";
 
 @ApiTags("Programación Académica")
 @Controller("programacion-academica")
@@ -1223,5 +1227,99 @@ export class ProgramacionAcademicaController {
       `attachment; filename=carga_docente_${perId}.xlsx`,
     );
     res.send(buffer);
+  }
+  @Get("dashboard/admin")
+  @ApiOperation({ summary: "Estadisticas del dashboard para Admin" })
+  getDashboardAdmin() {
+    return this.service.getDashboardAdmin();
+  }
+
+  @Get("dashboard/coordinador/:usuId")
+  @ApiOperation({ summary: "Estadisticas del dashboard para Coordinador" })
+  getDashboardCoordinador(@Param("usuId", ParseIntPipe) usuId: number) {
+    return this.service.getDashboardCoordinador(usuId);
+  }
+
+  @Get("dashboard/docente/:usuId")
+  @ApiOperation({ summary: "Estadisticas del dashboard para Docente" })
+  getDashboardDocente(@Param("usuId", ParseIntPipe) usuId: number) {
+    return this.service.getDashboardDocente(usuId);
+  }
+
+  @Get("bibliografia/materias/:docId/periodo/:perId")
+  getMateriasParaBibliografia(
+    @Param("docId", ParseIntPipe) docId: number,
+    @Param("perId", ParseIntPipe) perId: number,
+  ) {
+    return this.service.getMateriasParaBibliografia(docId, perId);
+  }
+
+  @Get("bibliografia/docente/:docId/periodo/:perId")
+  getBibliografiasByDocente(
+    @Param("docId", ParseIntPipe) docId: number,
+    @Param("perId", ParseIntPipe) perId: number,
+  ) {
+    return this.service.getBibliografiasByDocente(docId, perId);
+  }
+
+  @Post("bibliografia")
+  createBibliografia(@Body() dto: CreateBibliografiaDto) {
+    return this.service.createBibliografia(dto);
+  }
+
+  @Put("bibliografia/:id")
+  updateBibliografia(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: CreateBibliografiaDto,
+  ) {
+    return this.service.updateBibliografia(id, dto);
+  }
+
+  @Delete("bibliografia/:id")
+  deleteBibliografia(@Param("id", ParseIntPipe) id: number) {
+    return this.service.deleteBibliografia(id);
+  }
+
+  @Post("bibliografia/upload/:bibId")
+  @UseInterceptors(FileInterceptor("file"))
+  async uploadArchivoBibliografia(
+    @Param("bibId", ParseIntPipe) bibId: number,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) throw new BadRequestException("No se recibió ningún archivo");
+    return this.service.guardarArchivoEnBibliografia(
+      bibId,
+      file.buffer,
+      file.originalname,
+    );
+  }
+
+  @Get("bibliografia/archivo/:bibId")
+  async servirArchivoBibliografia(
+    @Param("bibId", ParseIntPipe) bibId: number,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, nombre } =
+      await this.service.servirArchivoBibliografia(bibId);
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="${nombre}"`,
+    });
+    const { Readable } = require("stream");
+    const stream = new Readable();
+    stream.push(buffer);
+    stream.push(null);
+    return new StreamableFile(stream);
+  }
+
+  @Get("reporte-bibliografia/periodo/:perId")
+  getReporteBibliografia(
+    @Param("perId", ParseIntPipe) perId: number,
+    @Query("escId") escId?: string,
+  ) {
+    return this.service.getReporteBibliografiaCoordinador(
+      perId,
+      escId ? parseInt(escId) : undefined,
+    );
   }
 }
