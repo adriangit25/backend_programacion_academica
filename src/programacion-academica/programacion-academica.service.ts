@@ -29,10 +29,13 @@ import { CreateHorarioDto } from "./dto/create-horario.dto";
 import { ConfigIADto } from "./dto/config-ia.dto";
 import { CreateBibliografiaDto } from "./dto/create-bibliografia.dto";
 import * as bcrypt from "bcrypt";
-
+import { BackupService } from "../backup/backup.service";
 @Injectable()
 export class ProgramacionAcademicaService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly backupService: BackupService,
+  ) {}
 
   // ==================== USUARIOS ====================
 
@@ -950,6 +953,9 @@ export class ProgramacionAcademicaService {
       ],
     );
 
+    // Backup automatico al crear un periodo (accion critica)
+    this.backupService.backupPorAccionCritica("periodo_creado").catch(() => {});
+
     return { message: "Período creado exitosamente", periodo: result.rows[0] };
   }
 
@@ -1865,6 +1871,11 @@ export class ProgramacionAcademicaService {
         data.error || "Error al confirmar horarios",
       );
     }
+
+    // Backup automatico tras confirmar horarios IA (accion critica)
+    this.backupService
+      .backupPorAccionCritica("horarios_confirmados")
+      .catch(() => {});
 
     return data;
   }

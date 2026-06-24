@@ -11,6 +11,8 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+      - "C:/Users/adria/OneDrive/Desktop/INTEGRACION CURRICULAR/BACKUPS & LOGS/LOGS:/app/logs"
+      - "C:/Users/adria/OneDrive/Desktop/INTEGRACION CURRICULAR/BACKUPS & LOGS/BACKUP:/app/backups"
     depends_on:
       - db
     restart: unless-stopped
