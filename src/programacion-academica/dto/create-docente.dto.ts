@@ -50,6 +50,15 @@ export class CreateDocenteDto {
   @IsNumber()
   doc_horas_minimas: number;
 
+  @ApiProperty({
+    description: "Horas de carga no docente",
+    example: 0,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  doc_horas_no_docentes?: number;
+
   @ApiProperty({ description: "Horas máximas semanales", example: 20 })
   @IsNotEmpty({ message: "Las horas máximas son obligatorias" })
   @IsNumber()

@@ -812,8 +812,8 @@ export class ProgramacionAcademicaService {
     }
 
     const result = await this.db.query(
-      `INSERT INTO tbl_docentes (usu_id, doc_titulo_grado, doc_titulo_posgrado, doc_tipo_contrato, doc_dedicacion, doc_horas_minimas, doc_horas_maximas, doc_observaciones, esc_id, doc_estado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      `INSERT INTO tbl_docentes (usu_id, doc_titulo_grado, doc_titulo_posgrado, doc_tipo_contrato, doc_dedicacion, doc_horas_minimas, doc_horas_maximas, doc_horas_no_docentes, doc_observaciones, esc_id, doc_estado)
+   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
       [
         dto.usu_id,
         dto.doc_titulo_grado ?? null,
@@ -822,6 +822,7 @@ export class ProgramacionAcademicaService {
         dto.doc_dedicacion,
         dto.doc_horas_minimas,
         dto.doc_horas_maximas,
+        dto.doc_horas_no_docentes ?? 0,
         dto.doc_observaciones ?? null,
         dto.esc_id,
         dto.doc_estado ?? true,
@@ -861,8 +862,8 @@ export class ProgramacionAcademicaService {
     await this.findOneDocente(id);
 
     const result = await this.db.query(
-      `UPDATE tbl_docentes SET usu_id = $1, doc_titulo_grado = $2, doc_titulo_posgrado = $3, doc_tipo_contrato = $4, doc_dedicacion = $5, doc_horas_minimas = $6, doc_horas_maximas = $7, doc_observaciones = $8, esc_id = $9, doc_estado = $10
-       WHERE doc_id = $11 RETURNING *`,
+      `UPDATE tbl_docentes SET usu_id = $1, doc_titulo_grado = $2, doc_titulo_posgrado = $3, doc_tipo_contrato = $4, doc_dedicacion = $5, doc_horas_minimas = $6, doc_horas_maximas = $7, doc_horas_no_docentes = $8, doc_observaciones = $9, esc_id = $10, doc_estado = $11
+   WHERE doc_id = $12 RETURNING *`,
       [
         dto.usu_id,
         dto.doc_titulo_grado ?? null,
@@ -871,6 +872,7 @@ export class ProgramacionAcademicaService {
         dto.doc_dedicacion,
         dto.doc_horas_minimas,
         dto.doc_horas_maximas,
+        dto.doc_horas_no_docentes ?? 0,
         dto.doc_observaciones ?? null,
         dto.esc_id,
         dto.doc_estado ?? true,
@@ -1905,7 +1907,9 @@ export class ProgramacionAcademicaService {
     let query = `
     SELECT d.doc_id, u.usu_nombres, u.usu_apellidos, u.usu_identificacion,
            d.doc_dedicacion, d.doc_horas_minimas, d.doc_horas_maximas,
-           COALESCE(SUM(asign.horas), 0)::int as horas_asignadas
+           COALESCE(d.doc_horas_no_docentes, 0)::int AS doc_horas_no_docentes,
+           (d.doc_horas_maximas - COALESCE(d.doc_horas_no_docentes, 0))::int AS doc_horas_disponibles,
+           COALESCE(SUM(asign.horas), 0)::int AS horas_asignadas
     FROM tbl_docentes d
     INNER JOIN tbl_usuarios u ON d.usu_id = u.usu_id
     LEFT JOIN (
@@ -1925,16 +1929,17 @@ export class ProgramacionAcademicaService {
 
     query += `
     GROUP BY d.doc_id, u.usu_nombres, u.usu_apellidos, u.usu_identificacion,
-             d.doc_dedicacion, d.doc_horas_minimas, d.doc_horas_maximas
+             d.doc_dedicacion, d.doc_horas_minimas, d.doc_horas_maximas,
+             d.doc_horas_no_docentes
     ORDER BY u.usu_apellidos, u.usu_nombres
   `;
 
     const result = await this.db.query(query, params);
     return result.rows.map((row) => {
+      const disponibles = row.doc_horas_disponibles;
       let estado = "Normal";
-      if (row.horas_asignadas < row.doc_horas_minimas) estado = "Subcarga";
-      else if (row.horas_asignadas > row.doc_horas_maximas)
-        estado = "Sobrecarga";
+      if (row.horas_asignadas > disponibles) estado = "Sobrecarga";
+      else if (row.horas_asignadas < row.doc_horas_minimas) estado = "Subcarga";
       return { ...row, estado };
     });
   }
